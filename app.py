@@ -2,91 +2,137 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
-st.set_page_config(page_title='AI 사용 직업과 고용인원 비교', page_icon='📊', layout='wide')
+st.set_page_config(
+    page_title='직업별 AI 활용과 업무시간 변화',
+    page_icon='📊',
+    layout='wide'
+)
+
+DATA_FILE = 'bok_occupation_ai_productivity.csv'
 
 @st.cache_data
 def load_data():
-    return pd.read_csv('occupation_ai_employment_merged.csv')
+    return pd.read_csv(DATA_FILE)
 
 try:
     df = load_data()
 except FileNotFoundError:
-    st.error('occupation_ai_employment_merged.csv 파일이 app.py와 같은 폴더에 있어야 합니다.')
+    st.error(f'{DATA_FILE} 파일이 app.py와 같은 폴더에 있어야 합니다.')
     st.stop()
 
-st.title('📊 AI를 많이 사용하는 직업은 일하는 사람도 많을까?')
-st.write('직업별 AI 사용 비율과 미국에서 실제로 일하는 사람 수를 비교해 봅니다.')
-st.warning('두 자료의 범위가 다릅니다. AI 사용 자료는 전 세계 Claude 사용 기록이고, 고용인원 자료는 미국 노동통계입니다. 따라서 “전 세계 사용량과 미국 고용인원의 관계”를 살펴보는 탐색입니다.')
+st.title('📊 AI를 많이 사용하는 직업은 업무시간도 더 줄었을까?')
+st.markdown('''
+한국은행 조사자료를 이용해 **직업별 AI 업무 활용률**과 **AI 활용 후 업무시간 감소율**을 비교합니다.
+''')
 
-st.subheader('🔎 질문')
-st.markdown('> **AI 사용 비율이 높은 직업군은 실제로 일하는 사람도 많을까?**')
+st.info(
+    '이 자료는 한국은행이 2025년에 조사한 직업군별 결과입니다. '
+    '업무시간 감소가 반드시 AI만의 결과라고 단정할 수는 없으며, 두 지표의 관계를 탐색하는 자료입니다.'
+)
+
+st.subheader('🔎 핵심 질문')
+st.markdown('> **AI를 많이 사용하는 직업일수록 업무시간이 더 많이 줄어들었을까?**')
+
+# 핵심 수치
+highest_use = df.loc[df['AI 업무 활용률(%)'].idxmax()]
+highest_reduction = df.loc[df['AI 활용 후 업무시간 감소율(%)'].idxmax()]
+correlation = df['AI 업무 활용률(%)'].corr(df['AI 활용 후 업무시간 감소율(%)'])
 
 c1, c2, c3, c4 = st.columns(4)
-c1.metric('비교한 직업군', f"{len(df)}개")
-c2.metric('AI 사용 비율 1위', df.loc[df['AI 사용 비율(%)'].idxmax(), '직업군'])
-c3.metric('고용인원 1위', df.loc[df['미국 고용인원'].idxmax(), '직업군'])
-correlation = df['AI 사용 비율(%)'].corr(df['미국 고용인원'])
-c4.metric('두 값의 함께 움직임', f'{correlation:.2f}')
+c1.metric('조사한 직업군', f'{len(df)}개')
+c2.metric('AI 활용률 1위', highest_use['직업군'])
+c3.metric('업무시간 감소 1위', highest_reduction['직업군'])
+c4.metric('두 지표의 함께 움직임', f'{correlation:.2f}')
 
-st.subheader('📈 한눈에 비교하기')
-st.write('점 하나가 직업군 하나입니다. 오른쪽일수록 일하는 사람이 많고, 위쪽일수록 Claude 사용 비율이 높습니다.')
-fig = px.scatter(
+st.subheader('📈 직업별 AI 활용률')
+use_sorted = df.sort_values('AI 업무 활용률(%)', ascending=True)
+fig_use = px.bar(
+    use_sorted,
+    x='AI 업무 활용률(%)',
+    y='직업군',
+    orientation='h',
+    text='AI 업무 활용률(%)',
+    color='AI 업무 활용률(%)',
+    color_continuous_scale='Blues',
+    labels={'AI 업무 활용률(%)': 'AI 업무 활용률 (%)', '직업군': '직업군'},
+    title='직업군별 업무 AI 활용률'
+)
+fig_use.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
+fig_use.update_layout(coloraxis_showscale=False, height=520)
+st.plotly_chart(fig_use, use_container_width=True)
+
+st.subheader('⏱️ 직업별 업무시간 감소율')
+time_sorted = df.sort_values('AI 활용 후 업무시간 감소율(%)', ascending=True)
+fig_time = px.bar(
+    time_sorted,
+    x='AI 활용 후 업무시간 감소율(%)',
+    y='직업군',
+    orientation='h',
+    text='AI 활용 후 업무시간 감소율(%)',
+    color='AI 활용 후 업무시간 감소율(%)',
+    color_continuous_scale='Oranges',
+    labels={'AI 활용 후 업무시간 감소율(%)': '업무시간 감소율 (%)', '직업군': '직업군'},
+    title='AI 활용 후 직업군별 업무시간 감소율'
+)
+fig_time.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
+fig_time.update_layout(coloraxis_showscale=False, height=520)
+st.plotly_chart(fig_time, use_container_width=True)
+
+st.subheader('🔗 두 지표의 관계')
+st.write('점 하나가 직업군 하나입니다. 오른쪽일수록 AI를 많이 사용하고, 위쪽일수록 업무시간 감소율이 높습니다.')
+fig_scatter = px.scatter(
     df,
-    x='미국 고용인원',
-    y='AI 사용 비율(%)',
+    x='AI 업무 활용률(%)',
+    y='AI 활용 후 업무시간 감소율(%)',
     text='직업군',
     hover_name='직업군',
-    hover_data={'미국 고용인원': ':,', '미국 고용인원(만명)': ':.2f', 'AI 사용 비율(%)': ':.2f', '직업군': False},
-    labels={'미국 고용인원': '미국에서 일하는 사람 수', 'AI 사용 비율(%)': '전체 Claude 사용 중 비율 (%)'},
-    title='직업군별 AI 사용 비율과 미국 고용인원'
+    hover_data={
+        'AI 업무 활용률(%)': ':.1f',
+        'AI 활용 후 업무시간 감소율(%)': ':.1f',
+        '주 40시간 기준 주간 단축 시간(시간)': ':.2f',
+        '직업군': False,
+    },
+    labels={
+        'AI 업무 활용률(%)': 'AI 업무 활용률 (%)',
+        'AI 활용 후 업무시간 감소율(%)': '업무시간 감소율 (%)',
+    },
+    title='AI 업무 활용률과 업무시간 감소율의 관계'
 )
-fig.update_traces(textposition='top center', marker={'size': 13})
-fig.update_xaxes(type='log', tickformat=',')
-st.plotly_chart(fig, use_container_width=True)
+fig_scatter.update_traces(textposition='top center', marker={'size': 13})
+fig_scatter.update_layout(height=600)
+st.plotly_chart(fig_scatter, use_container_width=True)
 
-st.subheader('🧭 네 가지로 나누어 보기')
-median_ai = df['AI 사용 비율(%)'].median()
-median_jobs = df['미국 고용인원'].median()
-def group(row):
-    many_ai = row['AI 사용 비율(%)'] >= median_ai
-    many_jobs = row['미국 고용인원'] >= median_jobs
-    if many_ai and many_jobs:
-        return 'AI 사용 많음 · 일하는 사람 많음'
-    if many_ai and not many_jobs:
-        return 'AI 사용 많음 · 일하는 사람 적음'
-    if not many_ai and many_jobs:
-        return 'AI 사용 적음 · 일하는 사람 많음'
-    return 'AI 사용 적음 · 일하는 사람 적음'
+st.info(
+    f'이번 자료에서는 두 지표의 상관계수가 **{correlation:.2f}**로 계산되었습니다. '
+    '값이 1에 가까울수록 함께 증가하는 경향이 있다는 뜻이지만, 인과관계를 증명하지는 않습니다.'
+)
 
-df['구분'] = df.apply(group, axis=1)
-summary = df.groupby('구분', as_index=False).agg(직업군수=('직업군', 'count'))
-summary['직업군 목록'] = summary['구분'].map(df.groupby('구분')['직업군'].apply(lambda x: ', '.join(x)).to_dict())
-st.dataframe(summary, use_container_width=True, hide_index=True)
+st.subheader('📋 전체 데이터')
+st.dataframe(df, use_container_width=True, hide_index=True)
 
-st.subheader('🏆 직업군 순위')
-view = st.radio('정렬 기준', ['AI 사용 비율이 높은 순서', '미국 고용인원이 많은 순서'], horizontal=True)
-if view == 'AI 사용 비율이 높은 순서':
-    ranked = df.sort_values('AI 사용 비율(%)', ascending=False)
-else:
-    ranked = df.sort_values('미국 고용인원', ascending=False)
-st.dataframe(ranked[['직업군', 'AI 사용 비율(%)', '미국 고용인원(만명)', '구분']], use_container_width=True, hide_index=True)
-
-with st.expander('💡 이 분석에서 얻을 수 있는 생각'):
+with st.expander('💡 분석에서 얻을 수 있는 의미'):
     st.markdown('''
-- AI 사용 비율이 높은 직업과 실제로 사람이 많이 일하는 직업은 항상 같지 않을 수 있습니다.
-- 컴퓨터 관련 직업은 AI 사용 비율이 높지만, 고용인원은 사무·행정이나 판매 직업보다 적을 수 있습니다.
-- 반대로 사람이 많이 일하는 직업이라도 AI 사용 비율이 낮을 수 있습니다.
-- 따라서 AI의 영향은 “얼마나 많이 쓰이는가”와 “얼마나 많은 사람의 일에 관련되는가”를 함께 봐야 합니다.
+- 전문가·관리자·사무직은 AI 업무 활용률과 업무시간 감소율이 모두 높은 편입니다.
+- 단순노무·서비스·기능직은 두 지표가 상대적으로 낮은 편입니다.
+- 생성형 AI의 효과는 모든 직업에서 똑같이 나타나지 않고, 직업의 업무 내용에 따라 달라질 수 있습니다.
+- 컴퓨터공학 진로에서는 AI를 사용하는 능력뿐 아니라, AI 결과를 확인하고 업무에 맞게 고치는 능력도 중요합니다.
 ''')
 
 with st.expander('📚 자료 출처와 주의점'):
     st.markdown('''
-**AI 사용 자료:** [Anthropic Economic Index](https://huggingface.co/datasets/Anthropic/EconomicIndex)  
-**고용인원 자료:** [미국 노동통계국 BLS, Occupational Employment and Wage Statistics, May 2025](https://www.bls.gov/news.release/ocwage.t01.htm)
+**출처:** [한국은행 이슈노트 제2025-22호](https://www.bok.or.kr/portal/bbs/P0002353/view.do?nttId=10093071)  
+**조사 대상:** 전국 만 15~64세 취업자 5,512명  
+**조사 기간:** 2025년 5월 19일~6월 17일
 
-- AI 사용 비율은 전체 Claude 사용 중 해당 직업군으로 분류된 사용의 비율입니다.
-- 고용인원은 미국에서 해당 직업으로 일하는 사람의 추정 인원입니다.
-- 두 자료의 나라와 조사 방법이 다르므로 인과관계를 증명하는 분석은 아닙니다.
+- 업무시간 감소율은 AI 활용 후 응답한 업무시간 변화에 대한 조사 결과입니다.
+- 주 40시간 기준 주간 단축 시간은 감소율을 이용해 계산한 참고값입니다.
+- 직업군이 9개뿐이므로 모든 세부 직업에 같은 결과가 적용된다고 볼 수 없습니다.
+- 상관관계가 있다고 해서 AI가 업무시간 감소의 유일한 원인이라고 말할 수 없습니다.
 ''')
 
-st.download_button('⬇️ 분석 데이터 CSV 다운로드', df.drop(columns=['구분']).to_csv(index=False).encode('utf-8-sig'), 'occupation_ai_employment_merged.csv', 'text/csv')
+st.download_button(
+    '⬇️ 분석 데이터 CSV 다운로드',
+    df.to_csv(index=False).encode('utf-8-sig'),
+    'bok_occupation_ai_productivity.csv',
+    'text/csv'
+)
