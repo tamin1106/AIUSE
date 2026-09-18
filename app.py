@@ -44,8 +44,8 @@ fig.update_xaxes(type="log")
 fig.update_yaxes(type="log")
 st.plotly_chart(fig,use_container_width=True)
 
-corr=filtered["Parameters"].corr(filtered["Training compute (FLOP)"],method="spearman")
-st.info(f"스피어만 순위 상관계수: **{corr:.3f}**")
+corr=filtered["Parameters"].corr(filtered["Training compute (FLOP)"])
+st.info(f"피어슨 상관계수: **{corr:.3f}**")
 with st.expander(f"📄 데이터 보기 ({len(filtered):,}개 행)"):
     cols=[c for c in ["Model","Publication date","Parameters","Training compute (FLOP)","Training compute estimation method"] if c in filtered.columns]
     st.dataframe(filtered[cols].sort_values("Publication date",ascending=False),use_container_width=True)
