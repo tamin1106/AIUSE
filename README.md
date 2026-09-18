@@ -1,5 +1,8 @@
-# AI 학습연산량 분석 앱
+# AI 사용량과 학습 계산량 앱
 
-`streamlit run app.py`로 실행합니다. Epoch AI의 `Training compute (FLOP)` 열을 사용하며, 발표일·파라미터·학습연산량이 있는 모델만 포함합니다.
+실행: `streamlit run app.py`
 
-출처: https://epoch.ai/data/ai-models
+- AI 사용량: 생성형 AI를 사용하는 일하는 나이 사람의 비율
+- 학습 계산량: AI를 학습시키는 데 사용된 계산량
+
+전문적인 모델 크기 용어와 금액 계산은 화면에서 제외했습니다.

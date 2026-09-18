@@ -3,59 +3,120 @@ import pandas as pd
 import plotly.express as px
 import numpy as np
 
-st.set_page_config(page_title="AI 학습연산량 분석", page_icon="🤖", layout="wide")
-CSV_FILE = "ai_models_compute_usable.csv"
+st.set_page_config(page_title='AI 사용량과 학습 계산량', page_icon='🤖', layout='wide')
 
 @st.cache_data
-def load_data():
-    df = pd.read_csv(CSV_FILE)
-    df["Publication date"] = pd.to_datetime(df["Publication date"], errors="coerce")
-    df["year"] = df["Publication date"].dt.year
-    df["Parameters (B)"] = pd.to_numeric(df["Parameters"], errors="coerce") / 1e9
-    df["Training compute (EFLOP)"] = pd.to_numeric(df["Training compute (FLOP)"], errors="coerce") / 1e18
+def load_usage():
+    df = pd.read_csv('ai_usage.csv')
+    df['날짜'] = pd.to_datetime(df['Day'], errors='coerce')
+    df['사용 비율'] = pd.to_numeric(df['Estimated share of working-age adults who use generative AI'], errors='coerce')
+    df = df.rename(columns={'Entity': '나라'})
+    return df.dropna(subset=['날짜', '사용 비율']).copy()
+
+@st.cache_data
+def load_compute():
+    df = pd.read_csv('ai_training_compute.csv')
+    df['발표일'] = pd.to_datetime(df['Publication date'], errors='coerce')
+    df['연도'] = df['발표일'].dt.year
+    df['학습 계산량 (EFLOP)'] = pd.to_numeric(df['Training compute (FLOP)'], errors='coerce') / 1e18
     df = df.replace([np.inf, -np.inf], np.nan)
-    return df.dropna(subset=["Publication date", "Parameters (B)", "Training compute (EFLOP)"]).copy()
+    return df.dropna(subset=['발표일', '연도', '학습 계산량 (EFLOP)']).copy()
 
-df = load_data()
-st.title("🤖 AI 모델의 학습연산량은 시간이 지날수록 증가했을까?")
-st.caption("Epoch AI 공식 AI Models 데이터 | 실제 기록·추정이 섞인 학습연산량(FLOP) 데이터")
-with st.sidebar:
-    st.header("🔍 분석 필터")
-    years = st.slider("발표 연도", int(df.year.min()), int(df.year.max()), (int(df.year.min()), int(df.year.max())))
-    filtered = df[df.year.between(*years)].copy()
-    st.info("학습연산량은 FLOP 단위이며, 데이터에 기록된 값만 사용합니다.")
+usage = load_usage()
+compute = load_compute()
 
-st.subheader("📌 데이터 요약")
-c1,c2,c3,c4=st.columns(4)
-c1.metric("분석 모델 수", f"{len(filtered):,}개")
-c2.metric("연산량 중앙값", f"{filtered['Training compute (EFLOP)'].median():,.2f} EFLOP")
-c3.metric("파라미터 중앙값", f"{filtered['Parameters (B)'].median():,.2f}B")
-c4.metric("분석 기간", f"{filtered.year.min()}–{filtered.year.max()}")
+st.title('🤖 AI 사용량과 AI를 만드는 데 필요한 계산량')
+st.caption('공개된 자료를 이용해 AI 사용 비율과 AI 학습에 사용된 계산량을 살펴봅니다.')
 
-yearly = filtered.groupby("year").agg(models=("Model","count"), median_compute=("Training compute (EFLOP)","median"), median_parameters=("Parameters (B)","median")).reset_index()
-st.subheader("📈 연도별 학습연산량")
-fig=px.line(yearly,x="year",y="median_compute",markers=True,labels={"year":"발표 연도","median_compute":"학습연산량 중앙값 (EFLOP)"},title="연도별 학습연산량 중앙값")
-fig.update_yaxes(type="log")
-st.plotly_chart(fig,use_container_width=True)
+use_tab, train_tab, compare_tab, source_tab = st.tabs(['👥 AI 사용량', '🖥️ 학습 계산량', '📊 두 자료 비교', '📚 자료 출처'])
 
-st.subheader("🔗 모델 크기와 학습연산량")
-fig=px.scatter(filtered,x="Parameters (B)",y="Training compute (EFLOP)",hover_name="Model",color="year",labels={"Parameters (B)":"파라미터 수 (billion)","Training compute (EFLOP)":"학습연산량 (EFLOP)","year":"발표 연도"},title="파라미터 수와 학습연산량")
-fig.update_xaxes(type="log")
-fig.update_yaxes(type="log")
-st.plotly_chart(fig,use_container_width=True)
+with use_tab:
+    st.header('사람들은 AI를 얼마나 사용하고 있을까?')
+    st.write('여기서 사용량은 **일하는 나이의 사람 중 생성형 AI를 사용한다고 조사된 사람의 비율**입니다.')
+    countries = sorted(usage['나라'].unique().tolist())
+    default_country = 'World' if 'World' in countries else countries[0]
+    country = st.selectbox('나라 또는 전체 선택', countries, index=countries.index(default_country))
+    selected = usage[usage['나라'] == country].sort_values('날짜')
+    if selected.empty:
+        st.warning('선택한 나라의 자료가 없습니다.')
+    else:
+        latest = selected.iloc[-1]
+        c1, c2, c3 = st.columns(3)
+        c1.metric('최근 AI 사용 비율', f"{latest['사용 비율']:.1f}%")
+        c2.metric('조사 시점', latest['날짜'].strftime('%Y-%m-%d'))
+        c3.metric('자료 개수', f"{len(selected)}개")
+        fig = px.line(selected, x='날짜', y='사용 비율', markers=True,
+                      labels={'날짜': '조사 날짜', '사용 비율': 'AI 사용 비율 (%)'},
+                      title=f'{country}의 생성형 AI 사용 비율')
+        fig.update_yaxes(range=[0, 100])
+        st.plotly_chart(fig, use_container_width=True)
+    with st.expander('사용량 자료 자세히 보기'):
+        st.dataframe(usage[['나라', '날짜', '사용 비율']].sort_values(['나라', '날짜']), use_container_width=True)
 
-corr=filtered["Parameters"].corr(filtered["Training compute (FLOP)"])
-st.info(f"피어슨 상관계수: **{corr:.3f}**")
-with st.expander(f"📄 데이터 보기 ({len(filtered):,}개 행)"):
-    cols=[c for c in ["Model","Publication date","Parameters","Training compute (FLOP)","Training compute estimation method"] if c in filtered.columns]
-    st.dataframe(filtered[cols].sort_values("Publication date",ascending=False),use_container_width=True)
-with st.expander("📚 출처와 주의점"):
-    st.markdown("""**출처:** [Epoch AI – Data on AI Models](https://epoch.ai/data/ai-models)  
-**공식 CSV:** [all_ai_models.csv](https://epoch.ai/data/all_ai_models.csv)  
-**라이선스:** Creative Commons Attribution 4.0
+with train_tab:
+    st.header('AI를 만들 때 계산량은 얼마나 필요했을까?')
+    st.write('AI를 학습시킬 때 컴퓨터가 처리한 계산량을 비교합니다. 숫자가 클수록 더 많은 계산을 했다는 뜻입니다.')
+    min_year, max_year = int(compute['연도'].min()), int(compute['연도'].max())
+    years = st.slider('AI 발표 연도', min_year, max_year, (min_year, max_year))
+    selected = compute[compute['연도'].between(*years)].copy()
+    c1, c2, c3 = st.columns(3)
+    c1.metric('분석한 AI 개수', f'{len(selected):,}개')
+    c2.metric('계산량 중앙값', f"{selected['학습 계산량 (EFLOP)'].median():,.2f}")
+    c3.metric('조사 기간', f'{selected["연도"].min()}–{selected["연도"].max()}')
+    yearly = selected.groupby('연도').agg(개수=('Model', 'count'), 계산량=('학습 계산량 (EFLOP)', 'median')).reset_index()
+    fig = px.line(yearly, x='연도', y='계산량', markers=True,
+                  labels={'연도': 'AI 발표 연도', '계산량': '학습 계산량 중앙값'},
+                  title='해마다 AI를 만드는 데 필요한 계산량의 변화')
+    fig.update_yaxes(type='log')
+    st.plotly_chart(fig, use_container_width=True)
+    with st.expander('학습 계산량 자료 자세히 보기'):
+        cols = [c for c in ['Model', '발표일', '학습 계산량 (EFLOP)', 'Training compute estimation method'] if c in selected.columns]
+        st.dataframe(selected[cols].sort_values('발표일', ascending=False), use_container_width=True)
 
-- `Training compute (FLOP)`는 모델 학습에 사용된 부동소수점 연산량입니다.
-- 데이터에는 논문에 직접 보고된 값과 Epoch AI가 방법론에 따라 계산한 값이 함께 포함될 수 있습니다.
-- FLOP는 기업의 실제 전기요금이나 금액이 아닙니다.
-""")
-st.download_button("⬇️ 현재 필터 데이터 CSV 다운로드",filtered.to_csv(index=False).encode("utf-8-sig"),"ai_models_compute_filtered.csv","text/csv")
+with compare_tab:
+    st.header('AI 이용률과 학습연산량 비교')
+    st.write('두 자료의 값 자체는 단위가 다르므로, 각각의 변화 방향을 보기 위해 0~100으로 바꾸어 한 그래프에 표시합니다.')
+    world = usage[usage['나라'] == 'World'].copy()
+    usage_yearly = world.assign(연도=world['날짜'].dt.year).groupby('연도', as_index=False)['사용 비율'].mean()
+    compute_yearly = compute.groupby('연도', as_index=False)['학습 계산량 (EFLOP)'].median()
+    comparison = usage_yearly.merge(compute_yearly, on='연도', how='inner')
+    if len(comparison) < 2:
+        st.warning('두 자료의 기간이 겹치는 연도가 부족해 비교 그래프를 만들 수 없습니다.')
+    else:
+        def scale_to_100(series):
+            low, high = series.min(), series.max()
+            if high == low:
+                return pd.Series([50.0] * len(series), index=series.index)
+            return (series - low) / (high - low) * 100
+
+        comparison['AI 이용률 변화 (0~100)'] = scale_to_100(comparison['사용 비율'])
+        comparison['학습연산량 변화 (0~100)'] = scale_to_100(comparison['학습 계산량 (EFLOP)'])
+        chart_data = comparison[['연도', 'AI 이용률 변화 (0~100)', '학습연산량 변화 (0~100)']].melt(
+            id_vars='연도', var_name='자료', value_name='변화 정도'
+        )
+        fig = px.line(chart_data, x='연도', y='변화 정도', color='자료', markers=True,
+                      labels={'연도': '연도', '변화 정도': '각 자료 안에서의 변화 정도 (0~100)'},
+                      title='AI 이용률과 학습연산량의 변화 흐름')
+        fig.update_yaxes(range=[0, 100])
+        st.plotly_chart(fig, use_container_width=True)
+        st.dataframe(comparison[['연도', '사용 비율', '학습 계산량 (EFLOP)']], use_container_width=True)
+        st.info('이 그래프는 두 자료의 증가·감소 흐름만 비교합니다. AI 이용률이 학습연산량 때문에 증가했다고 증명하는 그래프는 아닙니다.')
+
+with source_tab:
+    st.header('자료 출처')
+    st.markdown('''
+### AI 사용량
+[Our World in Data – Estimated share of working-age adults who use generative AI](https://ourworldindata.org/grapher/estimated-share-people-generative-ai.csv)
+
+이 자료는 전 세계 전체 질문 횟수가 아니라, 조사된 사람 중 생성형 AI를 사용한다고 답한 사람의 비율입니다.
+
+### 학습 계산량
+[Epoch AI – Data on AI Models](https://epoch.ai/data/ai-models)
+
+AI 모델을 학습시키는 데 사용된 계산량 자료입니다. 이 앱에서는 금액이나 전기요금으로 바꾸지 않고, CSV에 있는 계산량만 사용합니다.
+
+**주의:** 두 자료는 조사 대상과 기간이 다르므로, 두 수치를 하나의 원인·결과 관계로 단정하지 않습니다.
+''')
+
+st.download_button('⬇️ AI 사용량 CSV 다운로드', usage.to_csv(index=False).encode('utf-8-sig'), 'ai_usage.csv', 'text/csv')
+st.download_button('⬇️ 학습 계산량 CSV 다운로드', compute.to_csv(index=False).encode('utf-8-sig'), 'ai_training_compute.csv', 'text/csv')
