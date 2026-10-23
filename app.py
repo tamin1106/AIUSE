@@ -109,11 +109,21 @@ elif page == '2023 스트레스 원인 요약':
 
 elif page == '2025 미디어 과의존':
     st.header('2025년 청소년 인터넷·스마트폰 과의존 위험군')
+    total_media = 1234587
+    total_risk = 213243
+    risk_rate = total_risk / total_media * 100
+    st.metric('전체 참여자 중 위험군 비율', f'{risk_rate:.2f}%')
+    st.caption(f'전체 참여자 {total_media:,}명 중 위험군 {total_risk:,}명입니다.')
+    rate_df = pd.DataFrame({'구분':['전체 참여자','과의존 위험군'], '비율(%)':[100, risk_rate]})
+    rate_fig = px.bar(rate_df, x='구분', y='비율(%)', text='비율(%)', color='구분', height=350, labels={'구분':'','비율(%)':'비율(%)'}, color_discrete_sequence=['#b8c7e8','#f28e2b'])
+    rate_fig.update_traces(texttemplate='%{text:.2f}%', textposition='outside')
+    st.plotly_chart(rate_fig, use_container_width=True)
+    st.subheader('학교급·성별 위험군 인원')
     media = pd.DataFrame({'구분':['초등학생','중학생','고등학생','남자 청소년','여자 청소년'], '위험군 수':[57229,85487,70527,116414,96829]})
-    fig = px.bar(media, x='구분', y='위험군 수', text='위험군 수', color='위험군 수', color_continuous_scale='Blues', height=height)
+    fig = px.bar(media, x='구분', y='위험군 수', text='위험군 수', color='위험군 수', color_continuous_scale='Blues', height=height, labels={'위험군 수':'위험군 인원(명)'})
     if show_text: fig.update_traces(texttemplate='%{text:,}', textposition='outside')
     st.plotly_chart(fig, use_container_width=True)
-    st.metric('전체 위험군', '213,243명')
+    st.warning('학교급·성별별 분모가 공개 요약자료에 제시되지 않아, 아래 값은 비율이 아닌 위험군 인원입니다. 전체 비율만 17.27%로 계산했습니다.')
     st.caption('여성가족부 2025년 청소년 미디어 이용습관 진단조사. 스트레스 자료와 같은 학생 단위로 연결한 값은 아닙니다.')
     st.dataframe(media, use_container_width=True, hide_index=True)
 
