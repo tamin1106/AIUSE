@@ -3,91 +3,128 @@ import pandas as pd
 import plotly.express as px
 from pathlib import Path
 
-st.set_page_config(page_title='서울 청소년 스트레스 탐색', page_icon='📊', layout='wide')
+st.set_page_config(
+    page_title='청소년 스마트폰·스트레스 대시보드',
+    page_icon='📱',
+    layout='wide',
+    initial_sidebar_state='expanded',
+)
+
 DATA = Path(__file__).parent / 'data'
 
 @st.cache_data
 def read(name):
     return pd.read_csv(DATA / name)
 
-# 공식 자료 불러오기
+# 2025년 질병관리청 원시자료에서 집계한 공식 분석 결과
 sex2025 = read('official_2025_gender_summary.csv')
-causes2023 = read('korea_stress_causes_2023.csv')
 korea_trends = read('korea_stress_trend_2016_2025.csv')
 korea_school = read('korea_stress_school_gender_2025.csv')
+causes2023 = read('korea_stress_causes_2023.csv')
 rel_week = read('smartphone_stress_주중_overall.csv')
 rel_week_groups = read('smartphone_stress_주중_groups.csv')
 rel_weekend = read('smartphone_stress_주말_overall.csv')
 rel_weekend_groups = read('smartphone_stress_주말_groups.csv')
 
-st.title('📊 서울 청소년 스트레스 데이터 탐색')
-st.subheader('청소년의 스트레스는 학년·성별·원인에 따라 어떻게 다를까?')
-st.info('앱에 공식 공개자료를 내장했기 때문에 CSV 업로드 없이 바로 그래프를 선택할 수 있습니다.')
+# 색상
+BLUE = '#4F86F7'
+ORANGE = '#F28E2B'
+RED = '#D9534F'
+NAVY = '#183B56'
 
-st.sidebar.header('그래프 선택')
-page = st.sidebar.radio('분석 주제', ['핸드폰 사용-스트레스 관계', '2025 성별 비교', '2025 최신 추이', '2025 학교급·성별', '2023 스트레스 원인 요약', '2025 미디어 과의존', '자료 출처'])
-height = st.sidebar.slider('그래프 높이', 350, 800, 520, 50)
+st.markdown('''
+<style>
+.block-container {padding-top: 2rem; padding-bottom: 3rem;}
+.dashboard-title {font-size: 2.4rem; font-weight: 800; color: #183B56; margin-bottom: .2rem;}
+.dashboard-subtitle {font-size: 1.1rem; color: #607080; margin-bottom: 1.2rem;}
+.question-box {background: linear-gradient(135deg,#eef5ff,#fff7ed); border-left: 5px solid #4F86F7; padding: 1rem 1.2rem; border-radius: 0 12px 12px 0; margin: 1rem 0 1.4rem;}
+.small-note {color:#667085; font-size:.9rem;}
+</style>
+''', unsafe_allow_html=True)
+
+# 공통 그래프 함수
+def add_text(fig, enabled=True):
+    if enabled:
+        fig.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
+    else:
+        fig.update_traces(text=None)
+    return fig
+
+# 사이드바
+st.sidebar.title('📱 분석 메뉴')
+page = st.sidebar.radio(
+    '이동하기',
+    ['메인 대시보드', '성별 비교', '학교급 비교', '주중·주말 비교', '스트레스 원인', '자료 출처'],
+)
 show_text = st.sidebar.checkbox('그래프에 수치 표시', True)
+height = st.sidebar.slider('그래프 높이', 360, 700, 500, 20)
+st.sidebar.divider()
+st.sidebar.caption('자료: 질병관리청 제21차(2025년) 청소년건강행태조사')
 
-if page == '핸드폰 사용-스트레스 관계':
-    st.header('2025년 스마트폰 사용시간과 스트레스의 관계')
-    st.markdown('같은 학생의 스마트폰 사용시간과 스트레스 응답을 연결해 사용시간 구간별 **높은 스트레스 비율**을 계산했습니다.')
-    period = st.radio('사용시간 기준', ['주중', '주말'], horizontal=True)
-    chart = st.selectbox('그래프 종류', ['사용시간 구간별 스트레스 비율', '집단별 비교', '사용시간-스트레스 산점도'])
-    overall = rel_week if period == '주중' else rel_weekend
-    groups = rel_week_groups if period == '주중' else rel_weekend_groups
-    if chart == '사용시간 구간별 스트레스 비율':
-        fig = px.bar(overall, x='사용시간구간', y='높은스트레스비율(%)', text='높은스트레스비율(%)', color='높은스트레스비율(%)', color_continuous_scale='Oranges', height=height, labels={'사용시간구간':'스마트폰 사용시간','높은스트레스비율(%)':'높은 스트레스 비율(%)'})
-        if show_text: fig.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
-        else: fig.update_traces(text=None)
-        st.plotly_chart(fig, use_container_width=True)
-        st.dataframe(overall, use_container_width=True, hide_index=True)
-    elif chart == '집단별 비교':
-        dim = st.selectbox('비교 집단', ['성별', '학교급', '학년'])
-        d = groups[groups['구분'] == dim]
-        selected = st.multiselect('집단 선택', sorted(d['집단값'].dropna().unique()), default=list(sorted(d['집단값'].dropna().unique())))
-        d = d[d['집단값'].isin(selected)]
-        fig = px.line(d, x='사용시간구간', y='높은스트레스비율(%)', color='집단값', markers=True, height=height, labels={'사용시간구간':'스마트폰 사용시간','높은스트레스비율(%)':'높은 스트레스 비율(%)','집단값':dim})
-        st.plotly_chart(fig, use_container_width=True)
-        st.dataframe(d, use_container_width=True, hide_index=True)
-    else:
-        fig = px.scatter(overall, x='평균사용시간(분)', y='높은스트레스비율(%)', size='학생수(응답자)', text='사용시간구간', height=height, labels={'평균사용시간(분)':'평균 스마트폰 사용시간(분)','높은스트레스비율(%)':'높은 스트레스 비율(%)'})
-        st.plotly_chart(fig, use_container_width=True)
-        st.caption('추세선은 사용시간 구간별 집계값을 이용한 참고선입니다. 원인·결과를 증명하지 않습니다.')
-    st.success('결과 요약: 주중 스마트폰 사용시간이 1시간 미만인 구간의 높은 스트레스 비율은 38.2%, 8시간 이상 구간은 52.4%입니다.')
+if page == '메인 대시보드':
+    st.markdown('<div class="dashboard-title">청소년 스마트폰 사용과 스트레스</div>', unsafe_allow_html=True)
+    st.markdown('<div class="dashboard-subtitle">2025년 청소년건강행태조사 원시자료 기반 탐색 대시보드</div>', unsafe_allow_html=True)
+    st.markdown('''<div class="question-box"><b>핵심 질문</b><br>스마트폰을 많이 사용하는 학생일수록 높은 스트레스를 느끼는 비율도 높을까?</div>''', unsafe_allow_html=True)
 
-elif page == '2025 성별 비교':
-    st.header('2025년 성별 스마트폰 사용시간과 스트레스')
-    chart = st.selectbox('그래프 종류', ['나란히 막대그래프', '가로 막대그래프', '레이더 그래프'])
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric('분석 학생 수', '54,170명')
+    k2.metric('전체 높은 스트레스', '41.1%')
+    k3.metric('1~3시간 사용 집단', '36.2%')
+    k4.metric('8시간 이상 사용 집단', '52.4%', delta='+16.2%p')
+
+    st.subheader('핵심 결과: 주중 스마트폰 사용시간별 높은 스트레스 비율')
+    fig = px.bar(
+        rel_week, x='사용시간구간', y='높은스트레스비율(%)',
+        color='높은스트레스비율(%)', color_continuous_scale='Oranges',
+        text='높은스트레스비율(%)', height=height,
+        labels={'사용시간구간':'주중 스마트폰 사용시간', '높은스트레스비율(%)':'높은 스트레스 비율(%)'},
+    )
+    fig.update_layout(coloraxis_showscale=False, margin=dict(t=30,b=20,l=20,r=20))
+    add_text(fig, show_text)
+    st.plotly_chart(fig, use_container_width=True)
+
+    c1, c2 = st.columns([1.15, 1])
+    with c1:
+        st.subheader('사용시간과 스트레스 비율의 흐름')
+        scatter = px.scatter(
+            rel_week, x='평균사용시간(분)', y='높은스트레스비율(%)',
+            size='학생수(응답자)', text='사용시간구간',
+            color='높은스트레스비율(%)', color_continuous_scale='Oranges',
+            height=420,
+            labels={'평균사용시간(분)':'평균 스마트폰 사용시간(분)', '높은스트레스비율(%)':'높은 스트레스 비율(%)'},
+        )
+        scatter.update_traces(textposition='top center')
+        scatter.update_layout(coloraxis_showscale=False, margin=dict(t=20,b=20,l=20,r=20))
+        st.plotly_chart(scatter, use_container_width=True)
+    with c2:
+        st.subheader('핵심 해석')
+        st.markdown('''
+        **3시간 이상 사용 구간부터** 높은 스트레스 비율이 전반적으로 높아지는 경향이 나타났어.
+
+        특히 **8시간 이상 사용 집단은 52.4%**로, 1~3시간 사용 집단의 36.2%보다 **16.2%p 높아**.
+
+        하지만 이 결과만으로 스마트폰 사용이 스트레스의 원인이라고 단정할 수는 없어. 스트레스가 높은 학생이 스마트폰을 더 많이 사용하는 경우도 가능해.
+        ''')
+        st.info('이 대시보드는 원인·결과가 아니라 두 지표의 관계를 탐색하는 자료야.')
+
+    st.subheader('분석 기준')
+    st.dataframe(rel_week[['사용시간구간','학생수(응답자)','평균사용시간(분)','높은스트레스비율(%)']], use_container_width=True, hide_index=True)
+
+elif page == '성별 비교':
+    st.title('성별 비교')
+    st.caption('스마트폰 사용시간과 스트레스 인지율의 성별 평균을 비교합니다.')
     long = sex2025.melt(id_vars='성별', value_vars=['평일 스마트폰 사용시간(분)', '스트레스 인지율(%)'], var_name='지표', value_name='값')
-    if chart == '레이더 그래프':
-        score = sex2025.copy()
-        cols = ['평일 스마트폰 사용시간(분)', '스트레스 인지율(%)']
-        for c in cols: score[c] = score[c] / score[c].max() * 100
-        fig = px.line_polar(score, r='평일 스마트폰 사용시간(분)', theta='성별', line_close=True, markers=True, height=height)
-        st.plotly_chart(fig, use_container_width=True)
-        st.caption('레이더 그래프는 지표 단위가 달라 비교용으로 정규화한 그래프입니다.')
-    else:
-        horizontal = chart == '가로 막대그래프'
-        fig = px.bar(long, x='값' if horizontal else '성별', y='성별' if horizontal else '값', color='지표', barmode='group', orientation='h' if horizontal else 'v', text='값', height=height, color_discrete_sequence=['#4f86f7','#f28e2b'], labels={'값':'값','성별':'','지표':''})
-        if show_text: fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
-        else: fig.update_traces(text=None)
-        st.plotly_chart(fig, use_container_width=True)
-    st.dataframe(sex2025, use_container_width=True, hide_index=True)
-
-elif page == '2025 최신 추이':
-    st.header('2016~2025 전국 청소년 스트레스 인지율')
-    fig = px.line(korea_trends, x='연도', y='스트레스 인지율(%)', color='성별', markers=True, text='스트레스 인지율(%)', height=height)
-    if show_text: fig.update_traces(texttemplate='%{text:.1f}', textposition='top center')
+    chart = st.selectbox('그래프 종류', ['나란히 막대그래프', '가로 막대그래프'])
+    horizontal = chart == '가로 막대그래프'
+    fig = px.bar(long, x='값' if horizontal else '성별', y='성별' if horizontal else '값', color='지표', barmode='group', orientation='h' if horizontal else 'v', text='값', height=height, color_discrete_sequence=[BLUE, ORANGE], labels={'값':'값','성별':'','지표':''})
+    if show_text: fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
     else: fig.update_traces(text=None)
     st.plotly_chart(fig, use_container_width=True)
-    latest = korea_trends[korea_trends['연도'] == 2025]
-    st.dataframe(latest, use_container_width=True, hide_index=True)
-    st.caption('질병관리청 제21차 청소년건강행태조사. 2025년 남학생 32.9%, 여학생 50.3%입니다.')
+    st.dataframe(sex2025, use_container_width=True, hide_index=True)
 
-elif page == '2025 학교급·성별':
-    st.header('2025년 학교급·성별 스트레스 인지율')
-    chart = st.selectbox('그래프 종류', ['막대그래프', '히트맵'])
+elif page == '학교급 비교':
+    st.title('2025년 학교급·성별 비교')
+    chart = st.radio('그래프 종류', ['막대그래프', '히트맵'], horizontal=True)
     if chart == '막대그래프':
         fig = px.bar(korea_school, x='학교급', y='스트레스 인지율(%)', color='성별', barmode='group', text='스트레스 인지율(%)', height=height)
         if show_text: fig.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
@@ -98,44 +135,41 @@ elif page == '2025 학교급·성별':
     st.plotly_chart(fig, use_container_width=True)
     st.dataframe(korea_school, use_container_width=True, hide_index=True)
 
-elif page == '2023 스트레스 원인 요약':
-    st.header('2023년 청소년의 가장 큰 스트레스 원인')
-    fig = px.bar(causes2023, x='학교급', y='비율(%)', color='학교급', text='비율(%)', height=height, labels={'학교급':'','비율(%)':'비율(%)'}, color_discrete_sequence=['#4f86f7','#f28e2b'])
+elif page == '주중·주말 비교':
+    st.title('주중·주말 스마트폰 사용시간 비교')
+    st.caption('주중과 주말의 사용시간 구간별 높은 스트레스 비율을 비교합니다.')
+    w = rel_week[['사용시간구간','높은스트레스비율(%)']].assign(기간='주중')
+    e = rel_weekend[['사용시간구간','높은스트레스비율(%)']].assign(기간='주말')
+    compare = pd.concat([w, e], ignore_index=True)
+    fig = px.line(compare, x='사용시간구간', y='높은스트레스비율(%)', color='기간', markers=True, text='높은스트레스비율(%)', height=height, color_discrete_sequence=[BLUE, ORANGE], labels={'사용시간구간':'스마트폰 사용시간','높은스트레스비율(%)':'높은 스트레스 비율(%)','기간':''})
+    if show_text: fig.update_traces(texttemplate='%{text:.1f}%', textposition='top center')
+    else: fig.update_traces(text=None)
+    st.plotly_chart(fig, use_container_width=True)
+    st.dataframe(compare, use_container_width=True, hide_index=True)
+
+elif page == '스트레스 원인':
+    st.title('2023년 스트레스 원인 요약')
+    st.caption('2025년 공식 요약자료에는 스트레스 원인별 상세표가 확인되지 않아, 확인 가능한 최신 2023년 요약자료를 사용합니다.')
+    fig = px.bar(causes2023, x='학교급', y='비율(%)', color='학교급', text='비율(%)', height=height, labels={'학교급':'','비율(%)':'비율(%)'}, color_discrete_sequence=[BLUE, ORANGE])
     if show_text: fig.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
     else: fig.update_traces(text=None)
     st.plotly_chart(fig, use_container_width=True)
     st.dataframe(causes2023, use_container_width=True, hide_index=True)
-    st.caption('2023년 통계에서 중학생은 학업, 고등학생은 성적·진로 부담이 가장 큰 스트레스 원인으로 보고되었습니다. 2025년 공식 요약자료에는 이 원인별 상세표가 확인되지 않았습니다.')
-
-elif page == '2025 미디어 과의존':
-    st.header('2025년 청소년 인터넷·스마트폰 과의존 위험군')
-    total_media = 1234587
-    total_risk = 213243
-    risk_rate = total_risk / total_media * 100
-    st.metric('전체 참여자 중 위험군 비율', f'{risk_rate:.2f}%')
-    st.caption(f'전체 참여자 {total_media:,}명 중 위험군 {total_risk:,}명입니다.')
-    rate_df = pd.DataFrame({'구분':['전체 참여자','과의존 위험군'], '비율(%)':[100, risk_rate]})
-    rate_fig = px.bar(rate_df, x='구분', y='비율(%)', text='비율(%)', color='구분', height=350, labels={'구분':'','비율(%)':'비율(%)'}, color_discrete_sequence=['#b8c7e8','#f28e2b'])
-    rate_fig.update_traces(texttemplate='%{text:.2f}%', textposition='outside')
-    st.plotly_chart(rate_fig, use_container_width=True)
-    st.subheader('학교급·성별 위험군 인원')
-    media = pd.DataFrame({'구분':['초등학생','중학생','고등학생','남자 청소년','여자 청소년'], '위험군 수':[57229,85487,70527,116414,96829]})
-    fig = px.bar(media, x='구분', y='위험군 수', text='위험군 수', color='위험군 수', color_continuous_scale='Blues', height=height, labels={'위험군 수':'위험군 인원(명)'})
-    if show_text: fig.update_traces(texttemplate='%{text:,}', textposition='outside')
-    st.plotly_chart(fig, use_container_width=True)
-    st.warning('학교급·성별별 분모가 공개 요약자료에 제시되지 않아, 아래 값은 비율이 아닌 위험군 인원입니다. 전체 비율만 17.27%로 계산했습니다.')
-    st.caption('여성가족부 2025년 청소년 미디어 이용습관 진단조사. 스트레스 자료와 같은 학생 단위로 연결한 값은 아닙니다.')
-    st.dataframe(media, use_container_width=True, hide_index=True)
+    st.info('중학생은 학업, 고등학생은 성적·진로 부담이 가장 큰 스트레스 원인으로 나타났습니다.')
 
 else:
-    st.header('자료 출처와 해석 주의사항')
+    st.title('자료 출처와 해석 주의사항')
     st.markdown('''
-- [질병관리청 2025년 청소년건강행태조사](https://www.kdca.go.kr/bbs/kdca/41/215505/artclView.do?layout=unknown)
-- [교육정책네트워크 2023년 스트레스 원인 요약](https://edpolicy.kedi.re.kr/edpolicy/webzine/42/842878)
-- [여성가족부 2025년 청소년 미디어 이용습관 진단조사](https://www.mogef.go.kr/nw/enw/nw_enw_s001d.do?mid=mda700&bbtSn=712710)
-- [지표누리 스마트폰 과의존 현황](https://www.index.go.kr/unity/potal/main/EachDtlPageDetail.do?idx_cd=3061)
+    **주요 출처**
 
-앱의 관계 분석은 2025년 청소년건강행태조사 원시자료에서 같은 학생의 스마트폰 사용시간과 스트레스 응답을 연결해 만든 집계 결과입니다. 2020년 상세 원인·학년 메뉴는 최신 공식 자료로 대체할 수 없어 삭제했습니다.
-''')
+    - [질병관리청 청소년건강행태조사](https://www.kdca.go.kr/yhs/yhshmpg/main.do)
+    - [2025년 청소년건강행태조사 주요결과](https://www.kdca.go.kr/bbs/kdca/41/215505/artclView.do?layout=unknown)
+    - [교육정책네트워크 2023년 정신건강 통계](https://edpolicy.kedi.re.kr/edpolicy/webzine/42/842878)
 
-st.download_button('⬇️ 2023년 스트레스 원인 요약 다운로드', causes2023.to_csv(index=False).encode('utf-8-sig'), 'korea_stress_causes_2023.csv', 'text/csv')
+    **해석할 때 주의할 점**
+
+    이 대시보드는 2025년 원시자료에서 같은 학생의 스마트폰 사용시간과 스트레스 응답을 연결해 집계한 결과야. 따라서 성별 평균만 비교할 때보다 관계를 더 직접적으로 볼 수 있지만, 관찰자료이므로 스마트폰 사용이 스트레스의 원인이라고 단정할 수는 없어.
+
+    또한 2025년 공식 요약자료에는 성적·진로·친구관계 등 스트레스 원인별 상세표가 확인되지 않아, 원인 분석은 2023년 요약자료만 사용했어.
+    ''')
+    st.download_button('⬇️ 관계 분석 집계 CSV 다운로드', rel_week.to_csv(index=False).encode('utf-8-sig'), 'smartphone_stress_relationship.csv', 'text/csv')
