@@ -1,67 +1,160 @@
 import streamlit as st
 import pandas as pd
+import plotly.express as px
 import plotly.graph_objects as go
 from pathlib import Path
 
 st.set_page_config(page_title='청소년 스마트폰 사용과 스트레스', page_icon='📱', layout='wide')
 
 DATA_FILE = Path(__file__).parent / 'data' / 'official_2025_gender_summary.csv'
+REQUIRED_COLUMNS = ['성별', '평일 스마트폰 사용시간(분)', '스트레스 인지율(%)']
 
 @st.cache_data
 def load_data():
     return pd.read_csv(DATA_FILE)
 
-df = load_data()
+def add_labels(fig, show_labels, digits=1):
+    if show_labels:
+        fig.update_traces(texttemplate=f'%{{y:.{digits}f}}', textposition='outside')
+    else:
+        fig.update_traces(text=None)
+    return fig
+
+# -------------------- 데이터 --------------------
+try:
+    base_df = load_data()
+except FileNotFoundError:
+    st.error(f'{DATA_FILE} 파일이 app.py와 같은 폴더에 있어야 합니다.')
+    st.stop()
+
+st.sidebar.header('⚙️ 시각화 설정')
+uploaded = st.sidebar.file_uploader('같은 형식의 CSV로 바꾸기', type=['csv'])
+if uploaded is not None:
+    df = pd.read_csv(uploaded)
+    missing = [c for c in REQUIRED_COLUMNS if c not in df.columns]
+    if missing:
+        st.sidebar.error('필요한 열이 없습니다: ' + ', '.join(missing))
+        df = base_df.copy()
+    else:
+        st.sidebar.success('업로드한 CSV를 사용 중입니다.')
+else:
+    df = base_df.copy()
+
+metrics = {
+    '평일 스마트폰 사용시간(분)': '스마트폰 사용시간',
+    '스트레스 인지율(%)': '스트레스 인지율',
+}
+selected_metrics = st.sidebar.multiselect('비교할 지표', list(metrics), default=list(metrics))
+chart_type = st.sidebar.selectbox('그래프 종류', ['나란히 막대그래프', '가로 막대그래프', '상대 점수 그래프', '레이더 그래프', '선그래프', '자료표'])
+sort_by = st.sidebar.selectbox('정렬 기준', ['원래 순서'] + selected_metrics)
+order = df['성별'].astype(str).tolist()
+if sort_by != '원래 순서':
+    order = df.sort_values(sort_by, ascending=False)['성별'].astype(str).tolist()
+display_df = df.set_index('성별').loc[order].reset_index()
+show_labels = st.sidebar.checkbox('막대 위에 수치 표시', True)
+height = st.sidebar.slider('그래프 높이', 350, 800, 520, 50)
 
 st.title('📱 청소년 스마트폰 사용과 스트레스')
 st.subheader('스마트폰을 많이 사용하는 학생일수록 스트레스도 높을까?')
-st.warning('질병관리청 공개 요약 통계에는 SNS만의 사용시간이 따로 공개되지 않아, 이 앱은 SNS를 포함할 수 있는 전체 스마트폰 사용시간과 스트레스 인지율을 성별로 비교합니다. 따라서 개인별 SNS 사용과 스트레스의 관계를 증명하는 분석은 아닙니다.')
+st.warning('공개 요약 통계에는 SNS만의 사용시간이 따로 없어, SNS를 포함할 수 있는 전체 스마트폰 사용시간과 스트레스 인지율을 비교합니다. 이 자료만으로 원인과 결과를 판단할 수는 없습니다.')
 
-st.markdown('''
-### 이 앱에서 비교하는 두 데이터
+if not selected_metrics:
+    st.info('왼쪽에서 비교할 지표를 하나 이상 선택해 주세요.')
+    st.stop()
 
-- **스마트폰 사용시간:** 평일 하루 평균 사용시간(분)
-- **스트레스 인지율:** 평소 스트레스를 ‘대단히 많이’ 또는 ‘많이’ 느끼는 학생의 비율
-''')
+# -------------------- 요약 카드 --------------------
+card_cols = st.columns(min(4, len(selected_metrics) + 1))
+card_cols[0].metric('비교 집단 수', f'{len(display_df)}개')
+for i, col in enumerate(selected_metrics, start=1):
+    best = display_df.loc[display_df[col].idxmax()]
+    unit = '분' if '시간' in col else '%'
+    if i < len(card_cols):
+        card_cols[i].metric(metrics[col] + ' 1위', best['성별'], f"{best[col]:.1f}{unit}")
 
-c1, c2, c3 = st.columns(3)
-max_phone = df.loc[df['평일 스마트폰 사용시간(분)'].idxmax()]
-max_stress = df.loc[df['스트레스 인지율(%)'].idxmax()]
-c1.metric('평일 사용시간이 긴 집단', max_phone['성별'], f"{max_phone['평일 스마트폰 사용시간(분)']:.1f}분")
-c2.metric('스트레스 인지율이 높은 집단', max_stress['성별'], f"{max_stress['스트레스 인지율(%)']:.1f}%")
-c3.metric('여학생-남학생 사용시간 차이', f"{df.loc[df['성별']=='여학생','평일 스마트폰 사용시간(분)'].iloc[0] - df.loc[df['성별']=='남학생','평일 스마트폰 사용시간(분)'].iloc[0]:.1f}분")
+st.header('📊 선택한 그래프')
 
-st.header('1. 두 지표를 나란히 비교')
-fig = go.Figure()
-fig.add_bar(name='평일 스마트폰 사용시간(분)', x=df['성별'], y=df['평일 스마트폰 사용시간(분)'], marker_color='#4f86f7', text=df['평일 스마트폰 사용시간(분)'].map(lambda x: f'{x:.1f}분'), textposition='outside', yaxis='y')
-fig.add_bar(name='스트레스 인지율(%)', x=df['성별'], y=df['스트레스 인지율(%)'], marker_color='#f28e2b', text=df['스트레스 인지율(%)'].map(lambda x: f'{x:.1f}%'), textposition='outside', yaxis='y2')
-fig.update_layout(title='성별 스마트폰 사용시간과 스트레스 인지율', barmode='group', height=500, yaxis=dict(title='사용시간(분)', rangemode='tozero'), yaxis2=dict(title='스트레스 인지율(%)', overlaying='y', side='right', rangemode='tozero'), legend=dict(orientation='h', y=1.12))
-st.plotly_chart(fig, use_container_width=True)
-st.caption('두 지표는 단위가 다르므로 왼쪽 축은 분, 오른쪽 축은 퍼센트입니다.')
+# -------------------- 그래프 --------------------
+if chart_type == '자료표':
+    st.dataframe(display_df, use_container_width=True, hide_index=True)
 
-st.header('2. 비교하기 쉬운 상대 점수')
-st.write('각 지표에서 남학생 값을 100으로 놓은 비교용 점수입니다. 실제 비율이 아니라 성별 차이를 보기 위한 값입니다.')
-score = df.copy()
-score['스마트폰 사용시간 점수'] = score['평일 스마트폰 사용시간(분)'] / score.loc[score['성별']=='남학생', '평일 스마트폰 사용시간(분)'].iloc[0] * 100
-score['스트레스 인지율 점수'] = score['스트레스 인지율(%)'] / score.loc[score['성별']=='남학생', '스트레스 인지율(%)'].iloc[0] * 100
-score_long = score.melt(id_vars='성별', value_vars=['스마트폰 사용시간 점수', '스트레스 인지율 점수'], var_name='지표', value_name='비교 점수')
-fig2 = go.Figure()
-for name, color in [('스마트폰 사용시간 점수', '#4f86f7'), ('스트레스 인지율 점수', '#f28e2b')]:
-    part = score_long[score_long['지표'] == name]
-    fig2.add_bar(name=name, x=part['성별'], y=part['비교 점수'], marker_color=color, text=part['비교 점수'].map(lambda x: f'{x:.0f}'), textposition='outside')
-fig2.update_layout(barmode='group', height=430, yaxis_title='비교 점수(남학생=100)', yaxis_rangemode='tozero')
-st.plotly_chart(fig2, use_container_width=True)
+elif chart_type == '나란히 막대그래프':
+    long = display_df.melt(id_vars='성별', value_vars=selected_metrics, var_name='지표', value_name='값')
+    long['지표'] = long['지표'].map(metrics)
+    fig = px.bar(long, x='성별', y='값', color='지표', barmode='group', text='값',
+                 labels={'성별': '', '값': '원래 값', '지표': ''}, height=height,
+                 color_discrete_sequence=['#4f86f7', '#f28e2b'])
+    if show_labels:
+        fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
+    else:
+        fig.update_traces(text=None)
+    fig.update_layout(legend=dict(orientation='h', y=1.08, x=0))
+    st.plotly_chart(fig, use_container_width=True)
+    st.caption('두 지표의 단위가 다르므로 사용시간은 분, 스트레스는 %입니다. 크기 자체를 직접 비교하기보다 집단별 순서를 비교하세요.')
 
-st.header('3. 자료표')
-st.dataframe(df, use_container_width=True, hide_index=True)
-st.download_button('⬇️ 분석 데이터 CSV 다운로드', df.to_csv(index=False).encode('utf-8-sig'), 'official_2025_gender_summary.csv', 'text/csv')
+elif chart_type == '가로 막대그래프':
+    long = display_df.melt(id_vars='성별', value_vars=selected_metrics, var_name='지표', value_name='값')
+    long['지표'] = long['지표'].map(metrics)
+    fig = px.bar(long, x='값', y='성별', color='지표', barmode='group', orientation='h', text='값',
+                 labels={'성별': '', '값': '원래 값', '지표': ''}, height=height,
+                 color_discrete_sequence=['#4f86f7', '#f28e2b'])
+    if show_labels:
+        fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
+    else:
+        fig.update_traces(text=None)
+    fig.update_layout(legend=dict(orientation='h', y=1.08, x=0))
+    st.plotly_chart(fig, use_container_width=True)
+
+elif chart_type == '상대 점수 그래프':
+    score = display_df[['성별'] + selected_metrics].copy()
+    for col in selected_metrics:
+        score[metrics[col]] = score[col] / score[col].max() * 100
+    long = score.melt(id_vars='성별', value_vars=[metrics[c] for c in selected_metrics], var_name='지표', value_name='비교 점수')
+    fig = px.bar(long, x='성별', y='비교 점수', color='지표', barmode='group', text='비교 점수', height=height,
+                 labels={'성별': '', '비교 점수': '비교 점수 (최고값=100)', '지표': ''},
+                 color_discrete_sequence=['#4f86f7', '#f28e2b'])
+    if show_labels:
+        fig.update_traces(texttemplate='%{text:.0f}', textposition='outside')
+    else:
+        fig.update_traces(text=None)
+    fig.update_layout(yaxis_range=[0, 120], legend=dict(orientation='h', y=1.08, x=0))
+    st.plotly_chart(fig, use_container_width=True)
+    st.caption('각 지표의 가장 큰 값을 100으로 바꾼 비교용 점수입니다. 실제 분·%가 아닙니다.')
+
+elif chart_type == '레이더 그래프':
+    if len(selected_metrics) < 2:
+        st.info('레이더 그래프는 지표를 2개 이상 선택해야 합니다.')
+    else:
+        fig = go.Figure()
+        for _, row in display_df.iterrows():
+            values = [row[col] / display_df[col].max() * 100 for col in selected_metrics]
+            fig.add_trace(go.Scatterpolar(r=values + [values[0]], theta=[metrics[c] for c in selected_metrics] + [metrics[selected_metrics[0]]], fill='toself', name=str(row['성별'])))
+        fig.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, 100])), height=height, title='지표별 상대 크기 레이더 비교')
+        st.plotly_chart(fig, use_container_width=True)
+        st.caption('각 지표의 최고값을 100으로 정규화한 그래프입니다.')
+
+elif chart_type == '선그래프':
+    long = display_df.melt(id_vars='성별', value_vars=selected_metrics, var_name='지표', value_name='값')
+    long['지표'] = long['지표'].map(metrics)
+    fig = px.line(long, x='성별', y='값', color='지표', markers=True, height=height,
+                  labels={'성별': '비교 집단', '값': '원래 값', '지표': ''})
+    st.plotly_chart(fig, use_container_width=True)
+    st.caption('현재 자료는 성별 2개 집단 비교이므로 선의 기울기는 참고용으로만 해석하세요.')
+
+# -------------------- 세부 탐색 --------------------
+st.header('🔍 세부 탐색')
+with st.expander('수치와 차이 계산 보기'):
+    st.dataframe(display_df, use_container_width=True, hide_index=True)
+    if len(display_df) >= 2:
+        a, b = display_df.iloc[0], display_df.iloc[1]
+        st.write(f"첫 번째와 두 번째 집단의 차이: **{a['성별']}**와 **{b['성별']}**")
+        for col in selected_metrics:
+            st.write(f"- {metrics[col]}: {a[col] - b[col]:+.1f}")
 
 with st.expander('📌 해석할 때 주의할 점'):
     st.markdown('''
-- 이 표는 성별별 평균값을 비교한 것이므로, 같은 학생의 스마트폰 사용시간과 스트레스 응답을 직접 연결한 자료가 아닙니다.
-- 따라서 “스마트폰을 많이 사용해서 스트레스가 높아졌다”라고 결론 내릴 수 없습니다.
-- 더 정확한 SNS-스트레스 분석을 하려면 질병관리청 원시자료를 내려받아 같은 학생의 사용시간 문항과 스트레스 문항을 교차분석해야 합니다.
-- 이 앱의 ‘스마트폰 사용시간’은 SNS만의 사용시간이 아닙니다. 보고서에서는 ‘SNS를 포함할 수 있는 스마트폰 사용시간’이라고 표현하세요.
+- 이 자료는 성별별 평균값이므로, 같은 학생의 스마트폰 사용시간과 스트레스 응답을 직접 연결한 자료가 아닙니다.
+- 따라서 스마트폰 사용이 스트레스의 원인이라고 결론 내릴 수 없습니다.
+- SNS만의 사용시간을 분석하려면 질병관리청 원시자료에서 SNS 관련 문항을 확인하고 학생 개인 단위로 교차분석해야 합니다.
 ''')
 
 with st.expander('📚 공식 출처'):
@@ -69,5 +162,7 @@ with st.expander('📚 공식 출처'):
 - [질병관리청 청소년건강행태조사](https://www.kdca.go.kr/yhs/yhshmpg/main.do)
 - [제21차 2025년 청소년건강행태조사 원시자료 공개 안내](https://www.kdca.go.kr/bbs/kdca/42/304276/download.do)
 
-2025년 조사에서 평일 스마트폰 사용시간은 남학생 253.9분, 여학생 293.2분이었고, 스트레스 인지율은 남학생 32.9%, 여학생 50.3%였습니다.
+2025년 공개 주요 수치: 평일 스마트폰 사용시간 남학생 253.9분·여학생 293.2분, 스트레스 인지율 남학생 32.9%·여학생 50.3%.
 ''')
+
+st.download_button('⬇️ 현재 데이터 CSV 다운로드', df.to_csv(index=False).encode('utf-8-sig'), 'official_2025_gender_summary.csv', 'text/csv')
