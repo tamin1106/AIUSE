@@ -54,14 +54,37 @@ def add_text(fig, enabled=True):
 st.sidebar.title('📱 분석 메뉴')
 page = st.sidebar.radio(
     '이동하기',
-    ['메인 대시보드', '성별 비교', '학교급 비교', '주중·주말 비교', '스트레스 원인', '자료 출처'],
+    ['전시용 결과', '메인 대시보드', '성별 비교', '학교급 비교', '주중·주말 비교', '스트레스 원인', '자료 출처'],
 )
 show_text = st.sidebar.checkbox('그래프에 수치 표시', True)
 height = st.sidebar.slider('그래프 높이', 360, 700, 500, 20)
 st.sidebar.divider()
 st.sidebar.caption('자료: 질병관리청 제21차(2025년) 청소년건강행태조사')
 
-if page == '메인 대시보드':
+if page == '전시용 결과':
+    st.markdown('<div class="dashboard-title">📱 스마트폰 사용시간과 스트레스</div>', unsafe_allow_html=True)
+    st.markdown('<div class="dashboard-subtitle">2025년 청소년 54,170명의 응답을 사용한 전시용 결과 화면</div>', unsafe_allow_html=True)
+    st.markdown('<div class="question-box"><b>질문</b><br>스마트폰을 많이 사용하는 학생일수록 높은 스트레스를 느끼는 비율도 높을까?</div>', unsafe_allow_html=True)
+
+    a, b, c = st.columns(3)
+    a.metric('주중 1~3시간 사용', '36.2%')
+    b.metric('주중 8시간 이상 사용', '52.4%')
+    c.metric('두 집단의 차이', '16.2%p', delta='8시간 이상이 높음')
+
+    st.subheader('결과 한눈에 보기')
+    result = rel_week[['사용시간구간','높은스트레스비율(%)']].copy()
+    result['설명'] = ['38.2%가 높은 스트레스', '가장 낮은 비율: 36.2%', '39.3%로 증가 시작', '44.1%로 상승', '가장 높은 비율: 52.4%']
+    fig = px.bar(result, x='사용시간구간', y='높은스트레스비율(%)', text='높은스트레스비율(%)', color='높은스트레스비율(%)', color_continuous_scale='Oranges', height=470, labels={'사용시간구간':'주중 스마트폰 사용시간','높은스트레스비율(%)':'높은 스트레스 비율(%)'})
+    fig.update_layout(coloraxis_showscale=False, margin=dict(t=30,b=20,l=20,r=20))
+    fig.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
+    st.plotly_chart(fig, use_container_width=True)
+    st.dataframe(result, use_container_width=True, hide_index=True)
+
+    st.subheader('전시용 요약')
+    st.success('주중 스마트폰을 8시간 이상 사용하는 집단의 높은 스트레스 비율은 52.4%로, 1~3시간 사용하는 집단의 36.2%보다 16.2%p 높았습니다.')
+    st.info('주말에도 1~3시간 사용 집단은 34.7%, 8시간 이상 사용 집단은 48.4%였습니다. 다만 이 자료만으로 스마트폰 사용이 스트레스의 원인이라고 단정할 수는 없습니다.')
+
+elif page == '메인 대시보드':
     st.markdown('<div class="dashboard-title">청소년 스마트폰 사용과 스트레스</div>', unsafe_allow_html=True)
     st.markdown('<div class="dashboard-subtitle">2025년 청소년건강행태조사 원시자료 기반 탐색 대시보드</div>', unsafe_allow_html=True)
     st.markdown('''<div class="question-box"><b>핵심 질문</b><br>스마트폰을 많이 사용하는 학생일수록 높은 스트레스를 느끼는 비율도 높을까?</div>''', unsafe_allow_html=True)
