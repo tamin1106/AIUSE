@@ -4,165 +4,184 @@ import plotly.express as px
 import plotly.graph_objects as go
 from pathlib import Path
 
-st.set_page_config(page_title='청소년 스마트폰 사용과 스트레스', page_icon='📱', layout='wide')
-
-DATA_FILE = Path(__file__).parent / 'data' / 'official_2025_gender_summary.csv'
-REQUIRED_COLUMNS = ['성별', '평일 스마트폰 사용시간(분)', '스트레스 인지율(%)']
+st.set_page_config(page_title='학생 생활과 스트레스 데이터 탐색', page_icon='📊', layout='wide')
+BASE = Path(__file__).parent
+SUMMARY_FILE = BASE / 'data' / 'official_2025_gender_summary.csv'
 
 @st.cache_data
-def load_data():
-    return pd.read_csv(DATA_FILE)
+def load_summary():
+    return pd.read_csv(SUMMARY_FILE)
 
-def add_labels(fig, show_labels, digits=1):
-    if show_labels:
-        fig.update_traces(texttemplate=f'%{{y:.{digits}f}}', textposition='outside')
-    else:
-        fig.update_traces(text=None)
-    return fig
+def numeric_columns(data):
+    return data.select_dtypes(include='number').columns.tolist()
 
-# -------------------- 데이터 --------------------
-try:
-    base_df = load_data()
-except FileNotFoundError:
-    st.error(f'{DATA_FILE} 파일이 app.py와 같은 폴더에 있어야 합니다.')
-    st.stop()
+def categorical_columns(data):
+    return [c for c in data.columns if data[c].nunique(dropna=True) <= min(100, max(10, len(data) // 2))]
 
-st.sidebar.header('⚙️ 시각화 설정')
-uploaded = st.sidebar.file_uploader('같은 형식의 CSV로 바꾸기', type=['csv'])
-if uploaded is not None:
-    df = pd.read_csv(uploaded)
-    missing = [c for c in REQUIRED_COLUMNS if c not in df.columns]
-    if missing:
-        st.sidebar.error('필요한 열이 없습니다: ' + ', '.join(missing))
-        df = base_df.copy()
-    else:
-        st.sidebar.success('업로드한 CSV를 사용 중입니다.')
+def fmt(v):
+    return f'{v:,.1f}' if isinstance(v, float) else f'{v:,}'
+
+st.title('📊 학생 생활과 스트레스 데이터 탐색')
+st.markdown('''
+**지역·학교급·성별·스트레스 요인**을 직접 선택해 여러 그래프로 비교하는 앱입니다.
+
+현재 기본 데이터는 질병관리청의 2025년 공개 요약 통계입니다. 더 자세한 구별·학군별·학생 개인별 분석을 하려면 공식 원시자료 CSV를 왼쪽에서 업로드하세요.
+''')
+st.warning('기본 요약 데이터에는 남학생·여학생 2개 행만 있습니다. 따라서 기본 상태에서는 구별·학군별 결과를 만들 수 없습니다. 구별 결과를 임의로 만들지 않도록 원시자료 업로드 방식을 사용합니다.')
+
+# -------------------- 데이터 선택 --------------------
+st.sidebar.header('1. 데이터 선택')
+uploaded = st.sidebar.file_uploader('원시자료 또는 분석용 CSV 업로드', type=['csv', 'txt'])
+if uploaded is None:
+    df = load_summary()
+    using_raw = False
+    st.sidebar.info('현재 기본 데이터: 2025년 성별 요약 통계')
 else:
-    df = base_df.copy()
+    try:
+        df = pd.read_csv(uploaded, low_memory=False)
+        using_raw = True
+        st.sidebar.success(f'업로드 완료: {len(df):,}행')
+    except Exception as e:
+        st.error(f'CSV를 읽을 수 없습니다: {e}')
+        st.stop()
 
-metrics = {
-    '평일 스마트폰 사용시간(분)': '스마트폰 사용시간',
-    '스트레스 인지율(%)': '스트레스 인지율',
-}
-selected_metrics = st.sidebar.multiselect('비교할 지표', list(metrics), default=list(metrics))
-chart_type = st.sidebar.selectbox('그래프 종류', ['나란히 막대그래프', '가로 막대그래프', '상대 점수 그래프', '레이더 그래프', '선그래프', '자료표'])
-sort_by = st.sidebar.selectbox('정렬 기준', ['원래 순서'] + selected_metrics)
-order = df['성별'].astype(str).tolist()
-if sort_by != '원래 순서':
-    order = df.sort_values(sort_by, ascending=False)['성별'].astype(str).tolist()
-display_df = df.set_index('성별').loc[order].reset_index()
-show_labels = st.sidebar.checkbox('막대 위에 수치 표시', True)
-height = st.sidebar.slider('그래프 높이', 350, 800, 520, 50)
-
-st.title('📱 청소년 스마트폰 사용과 스트레스')
-st.subheader('스마트폰을 많이 사용하는 학생일수록 스트레스도 높을까?')
-st.warning('공개 요약 통계에는 SNS만의 사용시간이 따로 없어, SNS를 포함할 수 있는 전체 스마트폰 사용시간과 스트레스 인지율을 비교합니다. 이 자료만으로 원인과 결과를 판단할 수는 없습니다.')
-
-if not selected_metrics:
-    st.info('왼쪽에서 비교할 지표를 하나 이상 선택해 주세요.')
+if df.empty:
+    st.error('데이터에 행이 없습니다.')
     st.stop()
 
-# -------------------- 요약 카드 --------------------
-card_cols = st.columns(min(4, len(selected_metrics) + 1))
-card_cols[0].metric('비교 집단 수', f'{len(display_df)}개')
-for i, col in enumerate(selected_metrics, start=1):
-    best = display_df.loc[display_df[col].idxmax()]
-    unit = '분' if '시간' in col else '%'
-    if i < len(card_cols):
-        card_cols[i].metric(metrics[col] + ' 1위', best['성별'], f"{best[col]:.1f}{unit}")
+# -------------------- 원시자료 분석 모드 --------------------
+if using_raw:
+    st.header('① 원시자료 분석 설정')
+    all_cols = df.columns.tolist()
+    nums = numeric_columns(df)
+    cats = categorical_columns(df)
+    if not nums:
+        st.error('숫자로 인식되는 열이 없습니다. 원시자료를 숫자형 CSV로 변환해 주세요.')
+        st.stop()
 
-st.header('📊 선택한 그래프')
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        group_col = st.selectbox('비교할 집단 열', cats or all_cols, help='예: 지역, 학교급, 성별, 학년')
+    with c2:
+        value_col = st.selectbox('분석할 숫자 열', nums, help='예: 스트레스 점수, 스마트폰 사용시간')
+    with c3:
+        chart = st.selectbox('그래프 선택', ['집단별 평균 막대그래프', '집단별 분포 상자그림', '집단별 비율 그래프', '두 숫자 열 산점도', '집단별 히트맵', '원자료 표'])
 
-# -------------------- 그래프 --------------------
-if chart_type == '자료표':
-    st.dataframe(display_df, use_container_width=True, hide_index=True)
+    clean = df[[group_col, value_col] + [c for c in nums if c != value_col]].copy()
+    clean = clean.dropna(subset=[group_col, value_col])
+    clean[group_col] = clean[group_col].astype(str)
+    if len(clean) == 0:
+        st.error('선택한 열에 분석할 값이 없습니다.')
+        st.stop()
 
-elif chart_type == '나란히 막대그래프':
-    long = display_df.melt(id_vars='성별', value_vars=selected_metrics, var_name='지표', value_name='값')
-    long['지표'] = long['지표'].map(metrics)
-    fig = px.bar(long, x='성별', y='값', color='지표', barmode='group', text='값',
-                 labels={'성별': '', '값': '원래 값', '지표': ''}, height=height,
-                 color_discrete_sequence=['#4f86f7', '#f28e2b'])
-    if show_labels:
-        fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
-    else:
-        fig.update_traces(text=None)
-    fig.update_layout(legend=dict(orientation='h', y=1.08, x=0))
-    st.plotly_chart(fig, use_container_width=True)
-    st.caption('두 지표의 단위가 다르므로 사용시간은 분, 스트레스는 %입니다. 크기 자체를 직접 비교하기보다 집단별 순서를 비교하세요.')
-
-elif chart_type == '가로 막대그래프':
-    long = display_df.melt(id_vars='성별', value_vars=selected_metrics, var_name='지표', value_name='값')
-    long['지표'] = long['지표'].map(metrics)
-    fig = px.bar(long, x='값', y='성별', color='지표', barmode='group', orientation='h', text='값',
-                 labels={'성별': '', '값': '원래 값', '지표': ''}, height=height,
-                 color_discrete_sequence=['#4f86f7', '#f28e2b'])
-    if show_labels:
-        fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
-    else:
-        fig.update_traces(text=None)
-    fig.update_layout(legend=dict(orientation='h', y=1.08, x=0))
-    st.plotly_chart(fig, use_container_width=True)
-
-elif chart_type == '상대 점수 그래프':
-    score = display_df[['성별'] + selected_metrics].copy()
-    for col in selected_metrics:
-        score[metrics[col]] = score[col] / score[col].max() * 100
-    long = score.melt(id_vars='성별', value_vars=[metrics[c] for c in selected_metrics], var_name='지표', value_name='비교 점수')
-    fig = px.bar(long, x='성별', y='비교 점수', color='지표', barmode='group', text='비교 점수', height=height,
-                 labels={'성별': '', '비교 점수': '비교 점수 (최고값=100)', '지표': ''},
-                 color_discrete_sequence=['#4f86f7', '#f28e2b'])
-    if show_labels:
-        fig.update_traces(texttemplate='%{text:.0f}', textposition='outside')
-    else:
-        fig.update_traces(text=None)
-    fig.update_layout(yaxis_range=[0, 120], legend=dict(orientation='h', y=1.08, x=0))
-    st.plotly_chart(fig, use_container_width=True)
-    st.caption('각 지표의 가장 큰 값을 100으로 바꾼 비교용 점수입니다. 실제 분·%가 아닙니다.')
-
-elif chart_type == '레이더 그래프':
-    if len(selected_metrics) < 2:
-        st.info('레이더 그래프는 지표를 2개 이상 선택해야 합니다.')
-    else:
-        fig = go.Figure()
-        for _, row in display_df.iterrows():
-            values = [row[col] / display_df[col].max() * 100 for col in selected_metrics]
-            fig.add_trace(go.Scatterpolar(r=values + [values[0]], theta=[metrics[c] for c in selected_metrics] + [metrics[selected_metrics[0]]], fill='toself', name=str(row['성별'])))
-        fig.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, 100])), height=height, title='지표별 상대 크기 레이더 비교')
+    if chart == '집단별 평균 막대그래프':
+        result = clean.groupby(group_col, as_index=False)[value_col].agg(['mean', 'count']).reset_index()
+        result.columns = [group_col, '평균', '응답 수']
+        result = result.sort_values('평균', ascending=False)
+        fig = px.bar(result, x=group_col, y='평균', text='평균', color='평균', color_continuous_scale='Blues',
+                     labels={group_col: '', '평균': f'{value_col} 평균'}, title=f'{group_col}별 {value_col} 평균')
+        fig.update_traces(texttemplate='%{text:.2f}', textposition='outside')
         st.plotly_chart(fig, use_container_width=True)
-        st.caption('각 지표의 최고값을 100으로 정규화한 그래프입니다.')
+        st.dataframe(result, use_container_width=True, hide_index=True)
 
-elif chart_type == '선그래프':
-    long = display_df.melt(id_vars='성별', value_vars=selected_metrics, var_name='지표', value_name='값')
-    long['지표'] = long['지표'].map(metrics)
-    fig = px.line(long, x='성별', y='값', color='지표', markers=True, height=height,
-                  labels={'성별': '비교 집단', '값': '원래 값', '지표': ''})
-    st.plotly_chart(fig, use_container_width=True)
-    st.caption('현재 자료는 성별 2개 집단 비교이므로 선의 기울기는 참고용으로만 해석하세요.')
+    elif chart == '집단별 분포 상자그림':
+        fig = px.box(clean, x=group_col, y=value_col, color=group_col, points='outliers',
+                     labels={group_col: '', value_col: value_col}, title=f'{group_col}별 {value_col} 분포')
+        st.plotly_chart(fig, use_container_width=True)
+        st.caption('상자그림은 평균만 보지 않고 학생들의 값이 어느 범위에 모여 있는지 보여줍니다.')
 
-# -------------------- 세부 탐색 --------------------
-st.header('🔍 세부 탐색')
-with st.expander('수치와 차이 계산 보기'):
-    st.dataframe(display_df, use_container_width=True, hide_index=True)
-    if len(display_df) >= 2:
-        a, b = display_df.iloc[0], display_df.iloc[1]
-        st.write(f"첫 번째와 두 번째 집단의 차이: **{a['성별']}**와 **{b['성별']}**")
-        for col in selected_metrics:
-            st.write(f"- {metrics[col]}: {a[col] - b[col]:+.1f}")
+    elif chart == '집단별 비율 그래프':
+        threshold = st.number_input('높다고 볼 기준값', value=float(clean[value_col].median()))
+        rate = clean.assign(기준초과=clean[value_col] >= threshold).groupby(group_col)['기준초과'].mean().mul(100).reset_index(name='기준 이상 비율(%)')
+        rate = rate.sort_values('기준 이상 비율(%)', ascending=False)
+        fig = px.bar(rate, x=group_col, y='기준 이상 비율(%)', text='기준 이상 비율(%)', color='기준 이상 비율(%)',
+                     color_continuous_scale='Oranges', labels={group_col: ''}, title=f'{group_col}별 기준 이상 학생 비율')
+        fig.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
+        st.plotly_chart(fig, use_container_width=True)
+        st.write(f'기준값: **{threshold:.2f}**')
 
-with st.expander('📌 해석할 때 주의할 점'):
+    elif chart == '두 숫자 열 산점도':
+        y_candidates = [c for c in nums if c != value_col]
+        if not y_candidates:
+            st.info('산점도를 만들려면 숫자형 열이 2개 이상 필요합니다.')
+        else:
+            y_col = st.selectbox('세로축 숫자 열', y_candidates)
+            scatter = df[[group_col, value_col, y_col]].dropna().copy()
+            scatter[group_col] = scatter[group_col].astype(str)
+            fig = px.scatter(scatter, x=value_col, y=y_col, color=group_col, hover_data=[group_col],
+                             labels={group_col: '', value_col: value_col, y_col: y_col},
+                             title=f'{value_col}과 {y_col}의 관계')
+            st.plotly_chart(fig, use_container_width=True)
+            st.info(f'상관계수: **{scatter[value_col].corr(scatter[y_col]):.3f}** (인과관계를 뜻하지 않음)')
+
+    elif chart == '집단별 히트맵':
+        second_group = st.selectbox('세로로 나눌 두 번째 집단 열', [c for c in cats if c != group_col] or [group_col])
+        heat = df[[group_col, second_group, value_col]].dropna().pivot_table(index=second_group, columns=group_col, values=value_col, aggfunc='mean')
+        fig = px.imshow(heat, text_auto='.2f', aspect='auto', color_continuous_scale='Blues', title='두 집단별 평균 히트맵')
+        st.plotly_chart(fig, use_container_width=True)
+        st.dataframe(heat, use_container_width=True)
+
+    else:
+        st.dataframe(df, use_container_width=True, hide_index=True)
+
+    st.download_button('⬇️ 업로드 자료 다운로드', df.to_csv(index=False).encode('utf-8-sig'), 'uploaded_data.csv', 'text/csv')
     st.markdown('''
-- 이 자료는 성별별 평균값이므로, 같은 학생의 스마트폰 사용시간과 스트레스 응답을 직접 연결한 자료가 아닙니다.
-- 따라서 스마트폰 사용이 스트레스의 원인이라고 결론 내릴 수 없습니다.
-- SNS만의 사용시간을 분석하려면 질병관리청 원시자료에서 SNS 관련 문항을 확인하고 학생 개인 단위로 교차분석해야 합니다.
+#### 원시자료에서 찾아볼 수 있는 분석 예시
+
+- 지역 또는 학교 소재지별 스트레스 평균
+- 중학교·고등학교별 스트레스 비율
+- 성별·학교급별 스트레스 차이
+- 스트레스가 높은 학생의 스마트폰 사용시간 비교
+- 수면시간, 학업 부담, 가족관계 등 요인과 스트레스의 관계
+''')
+
+# -------------------- 기본 요약 모드 --------------------
+else:
+    st.header('① 기본 공개 요약 통계')
+    st.info('기본 파일은 성별별 평균만 포함합니다. 왼쪽에 원시자료 CSV를 업로드하면 지역·학교급·요인 분석 메뉴가 열립니다.')
+    metric_cols = [c for c in df.columns if c not in ['성별', '출처연도']]
+    selected = st.multiselect('표시할 지표', metric_cols, default=metric_cols)
+    chart = st.selectbox('그래프 선택', ['나란히 막대그래프', '가로 막대그래프', '레이더 그래프', '자료표'])
+    show_text = st.checkbox('그래프에 수치 표시', True)
+    height = st.slider('그래프 높이', 350, 800, 520, 50)
+
+    if selected:
+        if chart == '자료표':
+            st.dataframe(df, use_container_width=True, hide_index=True)
+        elif chart == '레이더 그래프':
+            score = df.copy()
+            for col in selected:
+                score[col] = score[col] / score[col].max() * 100
+            fig = go.Figure()
+            for _, row in score.iterrows():
+                values = [row[col] for col in selected]
+                fig.add_trace(go.Scatterpolar(r=values + [values[0]], theta=selected + [selected[0]], fill='toself', name=row['성별']))
+            fig.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, 100])), height=height, title='지표별 상대 크기 레이더 비교')
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            long = df.melt(id_vars='성별', value_vars=selected, var_name='지표', value_name='값')
+            fig = px.bar(long, x='성별' if chart == '나란히 막대그래프' else '값', y='값' if chart == '나란히 막대그래프' else '성별',
+                         color='지표', barmode='group', orientation='v' if chart == '나란히 막대그래프' else 'h', text='값', height=height,
+                         labels={'성별': '', '값': '값', '지표': ''}, color_discrete_sequence=['#4f86f7', '#f28e2b'])
+            if show_text:
+                fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
+            else:
+                fig.update_traces(text=None)
+            fig.update_layout(legend=dict(orientation='h', y=1.08, x=0))
+            st.plotly_chart(fig, use_container_width=True)
+    st.dataframe(df, use_container_width=True, hide_index=True)
+
+with st.expander('📌 데이터의 한계와 올바른 해석'):
+    st.markdown('''
+- 현재 기본 데이터는 남학생·여학생 2개 집단의 평균값입니다. 구별·학군별 결과가 아닙니다.
+- 질병관리청 청소년건강행태조사 원시자료를 공식 절차로 내려받아야 학생 개인 단위 분석이 가능합니다.
+- 구 단위 표본 수가 충분하지 않으면 학군별 비교 결과가 불안정할 수 있습니다.
+- 상관관계가 나와도 한 요인이 다른 요인의 원인이라고 단정할 수 없습니다.
 ''')
 
 with st.expander('📚 공식 출처'):
     st.markdown('''
 - [질병관리청 청소년건강행태조사](https://www.kdca.go.kr/yhs/yhshmpg/main.do)
-- [제21차 2025년 청소년건강행태조사 원시자료 공개 안내](https://www.kdca.go.kr/bbs/kdca/42/304276/download.do)
-
-2025년 공개 주요 수치: 평일 스마트폰 사용시간 남학생 253.9분·여학생 293.2분, 스트레스 인지율 남학생 32.9%·여학생 50.3%.
+- [제21차 2025년 원시자료 공개 안내](https://www.kdca.go.kr/bbs/kdca/42/304276/download.do)
+- [KOSIS 시·군·구별 스트레스 인지율](https://kosis.kr/statHtml/statHtml.do?sso=ok&returnurl=https%3A%2F%2Fkosis.kr%3A443%2FstatHtml%2FstatHtml.do%3FtblId%3DDT_H_MENTAL_STRESS%26co%3D%26orgId%3D177%26)
 ''')
-
-st.download_button('⬇️ 현재 데이터 CSV 다운로드', df.to_csv(index=False).encode('utf-8-sig'), 'official_2025_gender_summary.csv', 'text/csv')
