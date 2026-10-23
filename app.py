@@ -69,15 +69,22 @@ if page == '메인 대시보드':
     k1, k2, k3, k4 = st.columns(4)
     k1.metric('분석 학생 수', '54,170명')
     k2.metric('전체 높은 스트레스', '41.1%')
-    k3.metric('1~3시간 사용 집단', '36.2%')
-    k4.metric('8시간 이상 사용 집단', '52.4%', delta='+16.2%p')
+    k3.metric('주중 1~3시간 사용', '36.2%')
+    k4.metric('주중 8시간 이상 사용', '52.4%', delta='+16.2%p')
 
-    st.subheader('핵심 결과: 주중 스마트폰 사용시간별 높은 스트레스 비율')
+    st.subheader('핵심 결과: 스마트폰 사용시간별 높은 스트레스 비율')
+    main_period = st.radio('사용시간 기준', ['주중', '주말', '주중·주말 함께 보기'], horizontal=True)
+    if main_period == '주중':
+        main_rel = rel_week.assign(기간='주중')
+    elif main_period == '주말':
+        main_rel = rel_weekend.assign(기간='주말')
+    else:
+        main_rel = pd.concat([rel_week.assign(기간='주중'), rel_weekend.assign(기간='주말')], ignore_index=True)
     fig = px.bar(
-        rel_week, x='사용시간구간', y='높은스트레스비율(%)',
-        color='높은스트레스비율(%)', color_continuous_scale='Oranges',
+        main_rel, x='사용시간구간', y='높은스트레스비율(%)',
+        color='기간' if main_period == '주중·주말 함께 보기' else '높은스트레스비율(%)', color_continuous_scale='Oranges',
         text='높은스트레스비율(%)', height=height,
-        labels={'사용시간구간':'주중 스마트폰 사용시간', '높은스트레스비율(%)':'높은 스트레스 비율(%)'},
+        labels={'사용시간구간':'스마트폰 사용시간', '높은스트레스비율(%)':'높은 스트레스 비율(%)', '기간':''},
     )
     fig.update_layout(coloraxis_showscale=False, margin=dict(t=30,b=20,l=20,r=20))
     add_text(fig, show_text)
@@ -87,9 +94,9 @@ if page == '메인 대시보드':
     with c1:
         st.subheader('사용시간과 스트레스 비율의 흐름')
         scatter = px.scatter(
-            rel_week, x='평균사용시간(분)', y='높은스트레스비율(%)',
+            main_rel, x='평균사용시간(분)', y='높은스트레스비율(%)',
             size='학생수(응답자)', text='사용시간구간',
-            color='높은스트레스비율(%)', color_continuous_scale='Oranges',
+            color='기간' if main_period == '주중·주말 함께 보기' else '높은스트레스비율(%)', color_continuous_scale='Oranges',
             height=420,
             labels={'평균사용시간(분)':'평균 스마트폰 사용시간(분)', '높은스트레스비율(%)':'높은 스트레스 비율(%)'},
         )
@@ -108,7 +115,9 @@ if page == '메인 대시보드':
         st.info('이 대시보드는 원인·결과가 아니라 두 지표의 관계를 탐색하는 자료야.')
 
     st.subheader('분석 기준')
-    st.dataframe(rel_week[['사용시간구간','학생수(응답자)','평균사용시간(분)','높은스트레스비율(%)']], use_container_width=True, hide_index=True)
+    columns = ['사용시간구간','학생수(응답자)','평균사용시간(분)','높은스트레스비율(%)']
+    if main_period == '주중·주말 함께 보기': columns.append('기간')
+    st.dataframe(main_rel[columns], use_container_width=True, hide_index=True)
 
 elif page == '성별 비교':
     st.title('성별 비교')
