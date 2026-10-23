@@ -15,13 +15,15 @@ sex2025 = read('official_2025_gender_summary.csv')
 factors = read('seoul_stress_factors_2020.csv')
 trends = read('seoul_stress_trends.csv')
 grades = read('seoul_grade_stress_2020.csv')
+korea_trends = read('korea_stress_trend_2016_2025.csv')
+korea_school = read('korea_stress_school_gender_2025.csv')
 
 st.title('📊 서울 청소년 스트레스 데이터 탐색')
 st.subheader('청소년의 스트레스는 학년·성별·원인에 따라 어떻게 다를까?')
 st.info('앱에 공식 공개자료를 내장했기 때문에 CSV 업로드 없이 바로 그래프를 선택할 수 있습니다.')
 
 st.sidebar.header('그래프 선택')
-page = st.sidebar.radio('분석 주제', ['2025 성별 비교', '2020 스트레스 원인', '2020 학년·성별 비교', '2015~2020 연도 추이', '2025 미디어 과의존', '자료 출처'])
+page = st.sidebar.radio('분석 주제', ['2025 성별 비교', '2025 최신 추이', '2025 학교급·성별', '2020 스트레스 원인', '2020 학년·성별 비교', '2015~2020 연도 추이', '2025 미디어 과의존', '자료 출처'])
 height = st.sidebar.slider('그래프 높이', 350, 800, 520, 50)
 show_text = st.sidebar.checkbox('그래프에 수치 표시', True)
 
@@ -43,6 +45,29 @@ if page == '2025 성별 비교':
         else: fig.update_traces(text=None)
         st.plotly_chart(fig, use_container_width=True)
     st.dataframe(sex2025, use_container_width=True, hide_index=True)
+
+elif page == '2025 최신 추이':
+    st.header('2016~2025 전국 청소년 스트레스 인지율')
+    fig = px.line(korea_trends, x='연도', y='스트레스 인지율(%)', color='성별', markers=True, text='스트레스 인지율(%)', height=height)
+    if show_text: fig.update_traces(texttemplate='%{text:.1f}', textposition='top center')
+    else: fig.update_traces(text=None)
+    st.plotly_chart(fig, use_container_width=True)
+    latest = korea_trends[korea_trends['연도'] == 2025]
+    st.dataframe(latest, use_container_width=True, hide_index=True)
+    st.caption('질병관리청 제21차 청소년건강행태조사. 2025년 남학생 32.9%, 여학생 50.3%입니다.')
+
+elif page == '2025 학교급·성별':
+    st.header('2025년 학교급·성별 스트레스 인지율')
+    chart = st.selectbox('그래프 종류', ['막대그래프', '히트맵'])
+    if chart == '막대그래프':
+        fig = px.bar(korea_school, x='학교급', y='스트레스 인지율(%)', color='성별', barmode='group', text='스트레스 인지율(%)', height=height)
+        if show_text: fig.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
+        else: fig.update_traces(text=None)
+    else:
+        heat = korea_school.pivot(index='성별', columns='학교급', values='스트레스 인지율(%)')
+        fig = px.imshow(heat, text_auto='.1f', color_continuous_scale='Reds', aspect='auto', height=height, labels={'color':'스트레스 인지율(%)'})
+    st.plotly_chart(fig, use_container_width=True)
+    st.dataframe(korea_school, use_container_width=True, hide_index=True)
 
 elif page == '2020 스트레스 원인':
     st.header('2020년 서울 청소년의 스트레스 원인')
