@@ -12,9 +12,7 @@ def read(name):
 
 # 공식 자료 불러오기
 sex2025 = read('official_2025_gender_summary.csv')
-factors = read('seoul_stress_factors_2020.csv')
-trends = read('seoul_stress_trends.csv')
-grades = read('seoul_grade_stress_2020.csv')
+causes2023 = read('korea_stress_causes_2023.csv')
 korea_trends = read('korea_stress_trend_2016_2025.csv')
 korea_school = read('korea_stress_school_gender_2025.csv')
 rel_week = read('smartphone_stress_주중_overall.csv')
@@ -27,7 +25,7 @@ st.subheader('청소년의 스트레스는 학년·성별·원인에 따라 어�
 st.info('앱에 공식 공개자료를 내장했기 때문에 CSV 업로드 없이 바로 그래프를 선택할 수 있습니다.')
 
 st.sidebar.header('그래프 선택')
-page = st.sidebar.radio('분석 주제', ['핸드폰 사용-스트레스 관계', '2025 성별 비교', '2025 최신 추이', '2025 학교급·성별', '2020 스트레스 원인', '2020 학년·성별 비교', '2015~2020 연도 추이', '2025 미디어 과의존', '자료 출처'])
+page = st.sidebar.radio('분석 주제', ['핸드폰 사용-스트레스 관계', '2025 성별 비교', '2025 최신 추이', '2025 학교급·성별', '2023 스트레스 원인 요약', '2025 미디어 과의존', '자료 출처'])
 height = st.sidebar.slider('그래프 높이', 350, 800, 520, 50)
 show_text = st.sidebar.checkbox('그래프에 수치 표시', True)
 
@@ -100,56 +98,14 @@ elif page == '2025 학교급·성별':
     st.plotly_chart(fig, use_container_width=True)
     st.dataframe(korea_school, use_container_width=True, hide_index=True)
 
-elif page == '2020 스트레스 원인':
-    st.header('2020년 서울 청소년의 스트레스 원인')
-    factor_cols = ['성적','외모','부모와 갈등','교우관계','건강문제','가정형편 등']
-    view = st.radio('보기 방식', ['학년별 원인 비교', '성별별 원인 평균', '원인 순위'], horizontal=True)
-    if view == '학년별 원인 비교':
-        gender = st.selectbox('성별', ['남','여','전체'])
-        d = factors if gender == '전체' else factors[factors['성별'] == gender]
-        long = d.melt(id_vars=['성별','학년'], value_vars=factor_cols, var_name='스트레스 원인', value_name='비율(%)')
-        fig = px.bar(long, x='학년', y='비율(%)', color='스트레스 원인', barmode='group', text='비율(%)', height=height, labels={'학년':'','스트레스 원인':''})
-        if show_text: fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
-        else: fig.update_traces(text=None)
-        st.plotly_chart(fig, use_container_width=True)
-    elif view == '성별별 원인 평균':
-        long = factors.melt(id_vars=['성별','학년'], value_vars=factor_cols, var_name='스트레스 원인', value_name='비율(%)').groupby(['성별','스트레스 원인'], as_index=False)['비율(%)'].mean()
-        fig = px.bar(long, x='스트레스 원인', y='비율(%)', color='성별', barmode='group', text='비율(%)', height=height)
-        if show_text: fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
-        else: fig.update_traces(text=None)
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        avg = factors[factor_cols].mean().sort_values(ascending=False).reset_index()
-        avg.columns = ['스트레스 원인','평균 비율(%)']
-        fig = px.bar(avg, x='평균 비율(%)', y='스트레스 원인', orientation='h', text='평균 비율(%)', color='평균 비율(%)', color_continuous_scale='Oranges', height=height)
-        if show_text: fig.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
-        else: fig.update_traces(text=None)
-        st.plotly_chart(fig, use_container_width=True)
-    st.dataframe(factors, use_container_width=True, hide_index=True)
-
-elif page == '2020 학년·성별 비교':
-    st.header('2020년 서울 청소년 학년·성별 스트레스 인지율')
-    view = st.radio('그래프 종류', ['막대그래프', '히트맵', '상자그림'], horizontal=True)
-    if view == '막대그래프':
-        fig = px.bar(grades, x='학년', y='스트레스 인지율(%)', color='성별', barmode='group', text='스트레스 인지율(%)', height=height)
-        if show_text: fig.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
-        st.plotly_chart(fig, use_container_width=True)
-    elif view == '히트맵':
-        heat = grades.pivot(index='성별', columns='학년', values='스트레스 인지율(%)')
-        fig = px.imshow(heat, text_auto='.1f', color_continuous_scale='Reds', aspect='auto', height=height, labels={'color':'스트레스 인지율(%)'})
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        fig = px.box(grades, x='성별', y='스트레스 인지율(%)', color='성별', points='all', height=height)
-        st.plotly_chart(fig, use_container_width=True)
-    st.dataframe(grades, use_container_width=True, hide_index=True)
-
-elif page == '2015~2020 연도 추이':
-    st.header('서울과 전국 청소년 스트레스 인지율 추이')
-    fig = px.line(trends, x='연도', y='스트레스 인지율(%)', color='지역', markers=True, text='스트레스 인지율(%)', height=height)
-    if show_text: fig.update_traces(texttemplate='%{text:.1f}', textposition='top center')
+elif page == '2023 스트레스 원인 요약':
+    st.header('2023년 청소년의 가장 큰 스트레스 원인')
+    fig = px.bar(causes2023, x='학교급', y='비율(%)', color='학교급', text='비율(%)', height=height, labels={'학교급':'','비율(%)':'비율(%)'}, color_discrete_sequence=['#4f86f7','#f28e2b'])
+    if show_text: fig.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
+    else: fig.update_traces(text=None)
     st.plotly_chart(fig, use_container_width=True)
-    st.dataframe(trends, use_container_width=True, hide_index=True)
-    st.caption('2020년 자료이며, 코로나19 시기 조사 결과가 포함되어 있습니다.')
+    st.dataframe(causes2023, use_container_width=True, hide_index=True)
+    st.caption('2023년 통계에서 중학생은 학업, 고등학생은 성적·진로 부담이 가장 큰 스트레스 원인으로 보고되었습니다. 2025년 공식 요약자료에는 이 원인별 상세표가 확인되지 않았습니다.')
 
 elif page == '2025 미디어 과의존':
     st.header('2025년 청소년 인터넷·스마트폰 과의존 위험군')
@@ -164,13 +120,12 @@ elif page == '2025 미디어 과의존':
 else:
     st.header('자료 출처와 해석 주의사항')
     st.markdown('''
-- [질병관리청 청소년건강행태조사](https://www.kdca.go.kr/yhs/yhshmpg/main.do)
-- [서울연구원 2020년 서울 청소년 스트레스 분석](https://www.si.re.kr/node/64986)
-- [서울시 청소년 정신건강 통계](https://data.seoul.go.kr/dataList/OA-13516/S/1/datasetView.do)
+- [질병관리청 2025년 청소년건강행태조사](https://www.kdca.go.kr/bbs/kdca/41/215505/artclView.do?layout=unknown)
+- [교육정책네트워크 2023년 스트레스 원인 요약](https://edpolicy.kedi.re.kr/edpolicy/webzine/42/842878)
 - [여성가족부 2025년 청소년 미디어 이용습관 진단조사](https://www.mogef.go.kr/nw/enw/nw_enw_s001d.do?mid=mda700&bbtSn=712710)
 - [지표누리 스마트폰 과의존 현황](https://www.index.go.kr/unity/potal/main/EachDtlPageDetail.do?idx_cd=3061)
 
-서울연구원 자료는 2020년 질병관리청 청소년건강행태조사 마이크로데이터를 분석한 자료입니다. 자치구별 학생 자료가 아니므로 학군 순위를 만들 수 없습니다. KOSIS의 시·군·구별 스트레스는 일반 지역사회건강조사라 학생 전용 자료와 섞으면 안 됩니다.
+앱의 관계 분석은 2025년 청소년건강행태조사 원시자료에서 같은 학생의 스마트폰 사용시간과 스트레스 응답을 연결해 만든 집계 결과입니다. 2020년 상세 원인·학년 메뉴는 최신 공식 자료로 대체할 수 없어 삭제했습니다.
 ''')
 
-st.download_button('⬇️ 현재 화면 자료 다운로드', factors.to_csv(index=False).encode('utf-8-sig'), 'seoul_stress_factors_2020.csv', 'text/csv')
+st.download_button('⬇️ 2023년 스트레스 원인 요약 다운로드', causes2023.to_csv(index=False).encode('utf-8-sig'), 'korea_stress_causes_2023.csv', 'text/csv')
